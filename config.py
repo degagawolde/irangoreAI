@@ -40,10 +40,10 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4")
 
     # Vector Store Configuration
-    VECTOR_INDEX_NAME: str = os.getenv("VECTOR_INDEX_NAME", "moviePlots")
-    VECTOR_NODE_LABEL: str = os.getenv("VECTOR_NODE_LABEL", "Movie")
-    VECTOR_TEXT_PROPERTY: str = os.getenv("VECTOR_TEXT_PROPERTY", "plot")
-    VECTOR_EMBEDDING_PROPERTY: str = os.getenv("VECTOR_EMBEDDING_PROPERTY", "plotEmbedding")
+    VECTOR_INDEX_NAME: str = os.getenv("VECTOR_INDEX_NAME", "documentChunks")
+    VECTOR_NODE_LABEL: str = os.getenv("VECTOR_NODE_LABEL", "Chunk")
+    VECTOR_TEXT_PROPERTY: str = os.getenv("VECTOR_TEXT_PROPERTY", "text")
+    VECTOR_EMBEDDING_PROPERTY: str = os.getenv("VECTOR_EMBEDDING_PROPERTY", "embedding")
 
     # Session Configuration
     SESSION_TIMEOUT: int = 3600  # 1 hour in seconds

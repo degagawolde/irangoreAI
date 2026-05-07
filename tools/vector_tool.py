@@ -6,6 +6,7 @@ from core.exceptions import VectorStoreException
 from config import get_settings
 from graph import get_graph
 from llms import get_embeddings
+from langchain_neo4j import Neo4jVector
 
 logger = get_logger(__name__)
 
@@ -30,8 +31,7 @@ class VectorStoreTool:
     def _initialize_vector_store(self) -> None:
         """Initialize the Neo4j vector store."""
         try:
-            from langchain_neo4j import Neo4jVector
-            
+
             settings = get_settings()
             graph = get_graph()
             embeddings = get_embeddings()

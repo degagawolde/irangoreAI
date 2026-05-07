@@ -17,6 +17,7 @@ from schemas import (
 )
 from sessions import get_session_manager
 from agents import get_react_agent
+
 from core.exceptions import (
     ChatbotException,
     SessionException,
@@ -160,6 +161,7 @@ async def chat(request: ChatRequest):
         context_str = "\n".join(
             [f"{m['role']}: {m['content']}" for m in context_messages[:-1]]
         )
+       
         agent_prompt = (
             f"Previous conversation:\n{context_str}\n\nCurrent question: {request.message}"
             if context_str
@@ -168,6 +170,7 @@ async def chat(request: ChatRequest):
 
         # Run agent
         agent = get_react_agent()
+        
         reply = agent.run(agent_prompt)
 
         # Add assistant message to session

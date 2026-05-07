@@ -81,6 +81,7 @@ class CypherQueryTool:
                 qa_prompt=qa_prompt,
                 validate_cypher=True,
                 verbose=False,
+                allow_dangerous_requests=True
             )
 
             logger.info("Cypher QA chain initialized successfully")

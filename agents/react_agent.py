@@ -4,10 +4,13 @@ from typing import Optional, List, Dict, Any, Callable
 from core.logger import get_logger
 from core.exceptions import AgentException
 from llms import get_llm
-from tools import get_cypher_tool, get_vector_store
+from tools import get_cypher_tool, get_vector_store, ingest_documents_tool
 
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain_core.tools import Tool
+from langchain import hub
+            
 logger = get_logger(__name__)
-
 
 class AgentToolkit:
     """Toolkit for agent tools."""
@@ -20,13 +23,11 @@ class AgentToolkit:
     def _register_default_tools(self) -> None:
         """Register default tools for agents."""
         try:
-            from langchain_core.tools import Tool
-            
             # Cypher QA Tool
             cypher_tool = get_cypher_tool()
             self.tools["graph_qa"] = Tool(
                 name="Graph Database Query",
-                description="Query the knowledge graph using Cypher. Use this for structured data queries.",
+                description="Query the document knowledge graph using Cypher for structured relationship questions.",
                 func=cypher_tool.query,
             )
 
@@ -34,8 +35,19 @@ class AgentToolkit:
             vector_store = get_vector_store()
             self.tools["semantic_search"] = Tool(
                 name="Semantic Search",
-                description="Search for semantically similar information. Use this for finding related documents.",
+                description="Search semantically similar chunks from ingested documents.",
                 func=lambda query: vector_store.search(query, k=5),
+            )
+
+            # Document Ingestion Tool
+            self.tools["document_ingestion"] = Tool(
+                name="Document Graph Ingestion",
+                description=(
+                    "Load documents from disk, chunk them, embed chunks, and ingest into the graph. "
+                    "Input must be JSON string, e.g. "
+                    '{"path":"./docs","chunk_size":1000,"chunk_overlap":150}'
+                ),
+                func=ingest_documents_tool,
             )
 
             logger.info(f"Registered {len(self.tools)} default tools")
@@ -46,7 +58,6 @@ class AgentToolkit:
 
     def register_tool(self, name: str, description: str, func: Callable) -> None:
         """Register a custom tool."""
-        from langchain_core.tools import Tool
         
         self.tools[name] = Tool(name=name, description=description, func=func)
         logger.info(f"Registered custom tool: {name}")
@@ -69,9 +80,7 @@ class ReactAgent:
     def _initialize_agent(self) -> None:
         """Initialize the agent."""
         try:
-            from langchain.agents import AgentExecutor, create_react_agent
-            from langchain import hub
-            
+
             logger.info(f"Initializing ReAct agent: {self.name}")
 
             llm = get_llm()
