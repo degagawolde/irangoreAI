@@ -1,0 +1,20 @@
+2026-05-07 15:26:04 - uvicorn.error - INFO - _serve:92 - Started server process [25547]
+2026-05-07 15:26:04 - uvicorn.error - INFO - startup:48 - Waiting for application startup.
+2026-05-07 15:26:04 - main - INFO - lifespan:39 - Starting up chatbot backend...
+2026-05-07 15:26:04 - main - INFO - lifespan:40 - LLM Provider: ollama
+2026-05-07 15:26:04 - main - INFO - lifespan:41 - Neo4j: bolt://44.213.134.60:7687
+2026-05-07 15:26:04 - uvicorn.error - INFO - startup:62 - Application startup complete.
+2026-05-07 15:30:10 - uvicorn.access - INFO - send:484 - 127.0.0.1:64617 - "GET /health HTTP/1.1" 200
+2026-05-07 15:30:24 - uvicorn.access - INFO - send:484 - 127.0.0.1:64623 - "GET /health HTTP/1.1" 200
+2026-05-07 15:30:43 - uvicorn.error - INFO - _serve:92 - Started server process [26576]
+2026-05-07 15:30:43 - uvicorn.error - INFO - startup:48 - Waiting for application startup.
+2026-05-07 15:30:43 - main - INFO - lifespan:39 - Starting up chatbot backend...
+2026-05-07 15:30:43 - main - INFO - lifespan:40 - LLM Provider: ollama
+2026-05-07 15:30:43 - main - INFO - lifespan:41 - Neo4j: bolt://44.213.134.60:7687
+2026-05-07 15:30:43 - uvicorn.error - INFO - startup:62 - Application startup complete.
+2026-05-07 15:30:49 - uvicorn.access - INFO - send:484 - 127.0.0.1:64630 - "GET /docs HTTP/1.1" 200
+2026-05-07 15:30:49 - uvicorn.access - INFO - send:484 - 127.0.0.1:64630 - "GET /openapi.json HTTP/1.1" 200
+2026-05-07 15:31:30 - watchfiles.main - INFO - _log_changes:308 - 35 changes detected
+2026-05-07 15:31:31 - watchfiles.main - INFO - _log_changes:308 - 4 changes detected
+2026-05-07 15:34:00 - watchfiles.main - INFO - _log_changes:308 - 3 changes detected
+2026-05-07 15:34:02 - watchfiles.main - INFO - _log_changes:308 - 8 changes detected
