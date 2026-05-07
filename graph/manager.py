@@ -4,6 +4,7 @@ from typing import Optional, Any
 from core.logger import get_logger
 from core.exceptions import GraphException
 from config import get_settings
+from langchain_neo4j import Neo4jGraph
 
 logger = get_logger(__name__)
 
@@ -28,8 +29,6 @@ class GraphManager:
     def _connect(self) -> None:
         """Connect to Neo4j database."""
         try:
-            from langchain_neo4j import Neo4jGraph
-            
             settings = get_settings()
             logger.info(f"Connecting to Neo4j at {settings.NEO4J_URI}")
 

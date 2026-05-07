@@ -34,6 +34,10 @@ class Settings(BaseSettings):
 
     # Ollama Configuration
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    OLLAMA_TIMEOUT_SECONDS: int = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "120"))
+    EMBEDDING_BATCH_SIZE: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "32"))
+    PDF_OCR_FALLBACK_ENABLED: bool = os.getenv("PDF_OCR_FALLBACK_ENABLED", "true").lower() == "true"
+    PDF_OCR_LANG: str = os.getenv("PDF_OCR_LANG", "eng")
 
     # OpenAI Configuration (optional)
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")

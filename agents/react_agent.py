@@ -8,7 +8,7 @@ from tools import get_cypher_tool, get_vector_store, ingest_documents_tool
 
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.tools import Tool
-from langchain import hub
+from langchain_core.prompts import PromptTemplate
             
 logger = get_logger(__name__)
 
@@ -86,8 +86,30 @@ class ReactAgent:
             llm = get_llm()
             tools = self.toolkit.get_tools()
 
-            # Use the standard ReAct prompt from hub
-            prompt = hub.pull("hwchase17/react")
+            prompt = PromptTemplate.from_template(
+                """You are a helpful assistant that can use tools when needed.
+
+You have access to the following tools:
+{tools}
+
+Use this format:
+Question: the input question you must answer
+Thought: think about what to do next
+Action: the action to take, must be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat)
+Thought: I now know the final answer
+Final Answer: the final answer to the original question
+
+Rules:
+- Use tools for graph lookups, semantic search, and document ingestion as needed.
+- If you do not need a tool, answer directly.
+- Keep answers factual and concise.
+
+Question: {input}
+Thought:{agent_scratchpad}"""
+            )
 
             # Create the agent
             agent = create_react_agent(llm, tools, prompt)

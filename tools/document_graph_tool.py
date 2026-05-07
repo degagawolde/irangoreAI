@@ -7,6 +7,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import time
 
 from config import get_settings
 from core.exceptions import GraphException
@@ -14,12 +15,15 @@ from core.logger import get_logger
 from graph import get_graph
 from llms import get_embeddings
 
+from pypdf import PdfReader
+from docx import Document
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 logger = get_logger(__name__)
 
 
-SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".rst"}
+SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".rst",".docx",".pdf"}
 
 
 class DocumentGraphIngestionTool:
@@ -49,9 +53,17 @@ class DocumentGraphIngestionTool:
         documents: List[Dict[str, Any]] = []
         for file_path in files:
             try:
-                text = file_path.read_text(encoding="utf-8", errors="ignore").strip()
+                text = self._read_document_text(file_path).strip()
                 if not text:
+                    logger.warning(f"Skipping empty document: {file_path}")
                     continue
+                char_count = len(text)
+                logger.info(
+                    "Loaded document: title=%s path=%s chars=%s",
+                    file_path.name,
+                    str(file_path.resolve()),
+                    char_count,
+                )
                 documents.append(
                     {
                         "source_path": str(file_path.resolve()),
@@ -94,10 +106,30 @@ class DocumentGraphIngestionTool:
         for doc in documents:
             document_id = hashlib.sha256(doc["source_path"].encode("utf-8")).hexdigest()
             chunks = splitter.split_text(doc["content"])
+            logger.info(
+                "Chunking document: title=%s doc_id=%s total_chunks=%s",
+                doc["title"],
+                document_id,
+                len(chunks),
+            )
             for idx, chunk_text in enumerate(chunks):
                 normalized = chunk_text.strip()
                 if not normalized:
+                    logger.debug(
+                        "Skipping empty chunk: title=%s doc_id=%s chunk_index=%s",
+                        doc["title"],
+                        document_id,
+                        idx,
+                    )
                     continue
+                logger.info(
+                    "Prepared chunk: title=%s doc_id=%s chunk_id=%s chunk_index=%s chars=%s",
+                    doc["title"],
+                    document_id,
+                    f"{document_id}:{idx}",
+                    idx,
+                    len(normalized),
+                )
                 chunk_rows.append(
                     {
                         "document_id": document_id,
@@ -120,12 +152,19 @@ class DocumentGraphIngestionTool:
         created_at = datetime.now(timezone.utc).isoformat()
 
         texts = [c["text"] for c in chunks]
-        vectors = self.embeddings.embed_documents(texts)
+        vectors = self._embed_in_batches(texts)
         if len(vectors) != len(chunks):
             raise GraphException("Embedding count did not match chunk count")
 
         rows: List[Dict[str, Any]] = []
         for chunk, embedding in zip(chunks, vectors):
+            logger.info(
+                "Embedding chunk: chunk_id=%s doc_id=%s chunk_index=%s embedding_dimensions=%s",
+                chunk["chunk_id"],
+                chunk["document_id"],
+                chunk["chunk_index"],
+                len(embedding),
+            )
             row = {**chunk, "embedding": embedding, "created_at": created_at}
             rows.append(row)
 
@@ -158,6 +197,14 @@ FOREACH (_ IN CASE WHEN prev IS NULL THEN [] ELSE [1] END |
 )
 """
         self.graph.query(upsert_query, params={"rows": rows})
+        for row in rows:
+            logger.info(
+                "Ingested chunk to graph: chunk_id=%s doc_id=%s chunk_index=%s source_path=%s",
+                row["chunk_id"],
+                row["document_id"],
+                row["chunk_index"],
+                row["source_path"],
+            )
 
         doc_count = len({c["document_id"] for c in chunks})
         chunk_count = len(chunks)
@@ -195,6 +242,109 @@ OPTIONS {{
             self.graph.query(query, params={"dimensions": dimensions})
         except Exception as e:
             raise GraphException(f"Failed to create/verify vector index: {str(e)}")
+
+    def _read_document_text(self, file_path: Path) -> str:
+        """Read text from supported files with format-aware handlers."""
+        suffix = file_path.suffix.lower()
+        if suffix in {".txt", ".md", ".markdown", ".rst"}:
+            return file_path.read_text(encoding="utf-8", errors="ignore")
+
+        if suffix == ".pdf":
+            reader = PdfReader(str(file_path))
+            extracted = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+            if extracted:
+                return extracted
+
+            if self.settings.PDF_OCR_FALLBACK_ENABLED:
+                logger.warning(
+                    "No extractable text found in PDF. Falling back to OCR: %s",
+                    str(file_path),
+                )
+                ocr_text = self._extract_pdf_text_with_ocr(file_path)
+                if ocr_text.strip():
+                    return ocr_text
+                logger.warning("OCR fallback returned empty text for PDF: %s", str(file_path))
+            return extracted
+
+        if suffix == ".docx":
+            doc = Document(str(file_path))
+            return "\n".join(p.text for p in doc.paragraphs if p.text)
+
+        raise GraphException(f"Unsupported extension encountered: {suffix}")
+
+    def _extract_pdf_text_with_ocr(self, file_path: Path) -> str:
+        """OCR fallback for scanned PDFs when native text extraction fails."""
+        try:
+            import pytesseract
+            import pypdfium2 as pdfium
+        except ImportError as e:
+            logger.warning(
+                "OCR fallback unavailable for %s due to missing packages: %s",
+                str(file_path),
+                str(e),
+            )
+            return ""
+
+        try:
+            pdf = pdfium.PdfDocument(str(file_path))
+            ocr_chunks: List[str] = []
+            for page_index in range(len(pdf)):
+                page = pdf[page_index]
+                bitmap = page.render(scale=2.0).to_pil()
+                text = pytesseract.image_to_string(bitmap, lang=self.settings.PDF_OCR_LANG) or ""
+                cleaned = text.strip()
+                if cleaned:
+                    ocr_chunks.append(cleaned)
+            return "\n".join(ocr_chunks)
+        except Exception as e:
+            logger.warning("OCR fallback failed for %s: %s", str(file_path), str(e))
+            return ""
+
+    def _embed_in_batches(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings in batches to avoid oversized requests/hangs."""
+        batch_size = max(1, int(self.settings.EMBEDDING_BATCH_SIZE))
+        total = len(texts)
+        logger.info(
+            "Starting embeddings: total_texts=%s batch_size=%s model=%s",
+            total,
+            batch_size,
+            self.settings.EMBEDDING_MODEL,
+        )
+
+        vectors: List[List[float]] = []
+        started_at = time.perf_counter()
+        for start in range(0, total, batch_size):
+            end = min(start + batch_size, total)
+            batch = texts[start:end]
+            batch_started_at = time.perf_counter()
+            logger.info("Embedding batch started: start=%s end=%s size=%s", start, end - 1, len(batch))
+            try:
+                batch_vectors = self.embeddings.embed_documents(batch)
+            except Exception as e:
+                raise GraphException(
+                    f"Embedding batch failed for indexes {start}-{end - 1}: {str(e)}"
+                ) from e
+
+            if len(batch_vectors) != len(batch):
+                raise GraphException(
+                    f"Embedding batch size mismatch for indexes {start}-{end - 1}: "
+                    f"expected={len(batch)} got={len(batch_vectors)}"
+                )
+
+            vectors.extend(batch_vectors)
+            logger.info(
+                "Embedding batch finished: start=%s end=%s elapsed_seconds=%.2f",
+                start,
+                end - 1,
+                time.perf_counter() - batch_started_at,
+            )
+
+        logger.info(
+            "Completed embeddings: total_vectors=%s elapsed_seconds=%.2f",
+            len(vectors),
+            time.perf_counter() - started_at,
+        )
+        return vectors
 
 
 def get_document_graph_ingestion_tool() -> DocumentGraphIngestionTool:

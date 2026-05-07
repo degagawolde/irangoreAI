@@ -17,7 +17,7 @@ from langchain_neo4j import Neo4jChatMessageHistory
 # tag::import_agent[]
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain import hub
+from langchain_core.prompts import PromptTemplate
 # end::import_agent[]
 
 # tag::import_get_session_id[]
@@ -52,7 +52,32 @@ def get_memory(session_id):
 
 # tag::agent[]
 # tag::agent_prompt[]
-agent_prompt = hub.pull("hwchase17/react-chat")
+agent_prompt = PromptTemplate.from_template("""
+You are a movie expert providing information about movies.
+Be as helpful as possible and return as much information as possible.
+Do not answer any questions that do not relate to movies, actors or directors.
+
+TOOLS:
+------
+You have access to the following tools:
+{tools}
+
+To use a tool, please use the following format:
+Thought: Do I need to use a tool? Yes
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+
+When you have a response to say to the Human, or if you do not need to use a tool, you MUST use the format:
+Thought: Do I need to use a tool? No
+Final Answer: [your response here]
+
+Previous conversation history:
+{chat_history}
+
+New input: {input}
+{agent_scratchpad}
+""")
 # end::agent_prompt[]
 agent = create_react_agent(llm, tools, agent_prompt)
 agent_executor = AgentExecutor(

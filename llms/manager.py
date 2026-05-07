@@ -1,6 +1,7 @@
 """LLM (Language Model) management and initialization."""
 
 from typing import Optional, Any
+import requests
 from core.logger import get_logger
 from core.exceptions import LLMException
 from config import get_settings
@@ -49,16 +50,19 @@ class LLMManager:
         """Initialize Ollama LLM and embeddings."""
         try:
             from langchain_ollama import ChatOllama, OllamaEmbeddings
+            self._validate_ollama(settings)
 
             self._llm = ChatOllama(
                 model=settings.LLM_MODEL,
                 temperature=settings.LLM_TEMPERATURE,
                 base_url=settings.OLLAMA_BASE_URL,
+                client_kwargs={"timeout": settings.OLLAMA_TIMEOUT_SECONDS},
             )
 
             self._embeddings = OllamaEmbeddings(
                 model=settings.EMBEDDING_MODEL,
                 base_url=settings.OLLAMA_BASE_URL,
+                client_kwargs={"timeout": settings.OLLAMA_TIMEOUT_SECONDS},
             )
 
             logger.info(
@@ -89,6 +93,35 @@ class LLMManager:
 
         except ImportError as e:
             raise LLMException(f"OpenAI dependencies not installed: {str(e)}")
+
+    def _validate_ollama(self, settings) -> None:
+        """Fail fast if Ollama server or embedding model is unavailable."""
+        tags_url = f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/tags"
+        try:
+            response = requests.get(tags_url, timeout=settings.OLLAMA_TIMEOUT_SECONDS)
+            response.raise_for_status()
+        except Exception as e:
+            raise LLMException(
+                "Ollama is not reachable. "
+                f"base_url={settings.OLLAMA_BASE_URL} timeout={settings.OLLAMA_TIMEOUT_SECONDS}s error={str(e)}"
+            ) from e
+
+        try:
+            payload = response.json()
+            models = payload.get("models", [])
+            names = {m.get("name") for m in models if isinstance(m, dict)}
+        except Exception:
+            names = set()
+
+        expected = settings.EMBEDDING_MODEL
+        expected_prefix = f"{expected}:"
+        matched = any(name == expected or (isinstance(name, str) and name.startswith(expected_prefix)) for name in names)
+        if not matched:
+            logger.warning(
+                "Embedding model not found in Ollama tags. model=%s available_models_count=%s",
+                expected,
+                len(names),
+            )
 
     @property
     def llm(self) -> Any:
