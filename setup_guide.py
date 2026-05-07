@@ -8,7 +8,6 @@ import os
 import sys
 from pathlib import Path
 
-
 def check_python_version():
     """Check Python version."""
     print("✓ Checking Python version...")
@@ -72,7 +71,6 @@ def check_services():
 
     # Check Neo4j
     try:
-        from neo4j import GraphDatabase
         neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
         print(f"  Neo4j URI: {neo4j_uri}")
         print("  ⚠ Run connectivity test after startup")
