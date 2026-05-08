@@ -7,7 +7,7 @@ from graph import graph
 
 # tag::prompt[]
 CYPHER_GENERATION_TEMPLATE = """
-You are an expert Neo4j Developer translating user questions into Cypher to answer questions about movies and provide recommendations.
+You are an expert Neo4j Developer translating user questions into Cypher to query documents stored as a knowledge graph.
 Convert the user's question based on the schema.
 
 Use only the provided relationship types and properties in the schema.
@@ -15,43 +15,29 @@ Do not use any other relationship types or properties that are not provided.
 
 Do not return entire nodes or embedding properties.
 
-Fine Tuning:
-
-For movie titles that begin with "The", move "the" to the end. For example "The 39 Steps" becomes "39 Steps, The" or "the matrix" becomes "Matrix, The".
-
 Example Cypher Statements:
 
-1. To find who acted in a movie:
+1. To find chunks from specific documents:
 ```
-MATCH (p:Person)-[r:ACTED_IN]->(m:Movie {{title: "Movie Title"}})
-RETURN p.name, r.role
-```
-
-2. To find who directed a movie:
-```
-MATCH (p:Person)-[r:DIRECTED]->(m:Movie {{title: "Movie Title"}})
-RETURN p.name
+MATCH (d:Document)-[:HAS_CHUNK]->(c:Chunk)
+WHERE d.title CONTAINS "search term"
+RETURN d.title, c.text, c.chunk_index
+ORDER BY c.chunk_index
 ```
 
-3. How to find how many degrees of separation there are between two people:
+2. To find related chunks by sequence:
 ```
-MATCH path = shortestPath(
-  (p1:Person {{name: "Actor 1"}})-[:ACTED_IN|DIRECTED*]-(p2:Person {{name: "Actor 2"}})
-)
-WITH path, p1, p2, relationships(path) AS rels
-RETURN
-  p1 {{ .name, .born, link:'https://www.themoviedb.org/person/'+ p1.tmdbId }} AS start,
-  p2 {{ .name, .born, link:'https://www.themoviedb.org/person/'+ p2.tmdbId }} AS end,
-  reduce(output = '', i in range(0, length(path)-1) |
-    output + CASE
-      WHEN i = 0 THEN
-       startNode(rels[i]).name + CASE WHEN type(rels[i]) = 'ACTED_IN' THEN ' played '+ rels[i].role +' in 'ELSE ' directed ' END + endNode(rels[i]).title
-       ELSE
-         ' with '+ startNode(rels[i]).name + ', who '+ CASE WHEN type(rels[i]) = 'ACTED_IN' THEN 'played '+ rels[i].role +' in '
-    ELSE 'directed '
-      END + endNode(rels[i]).title
-      END
-  ) AS pathBetweenPeople
+MATCH (c1:Chunk)-[:NEXT_CHUNK]->(c2:Chunk)
+WHERE c1.document_id = "doc_id"
+RETURN c1.text, c2.text
+ORDER BY c1.chunk_index
+```
+
+3. To find chunks with specific content:
+```
+MATCH (d:Document)-[:HAS_CHUNK]->(c:Chunk)
+WHERE c.text CONTAINS "search term"
+RETURN d.title, c.text, c.source_path
 ```
 
 Schema:

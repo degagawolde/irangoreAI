@@ -8,7 +8,7 @@ from graph import graph
 
 # tag::prompt[]
 CYPHER_GENERATION_TEMPLATE = """
-You are an expert Neo4j Developer translating user questions into Cypher to answer questions about movies and provide recommendations.
+You are an expert Neo4j Developer translating user questions into Cypher to query documents stored as a knowledge graph.
 Convert the user's question based on the schema.
 
 Use only the provided relationship types and properties in the schema.
@@ -16,9 +16,23 @@ Do not use any other relationship types or properties that are not provided.
 
 Do not return entire nodes or embedding properties.
 
-Fine Tuning:
+Example Cypher Statements:
 
-For movie titles that begin with "The", move "the" to the end. For example "The 39 Steps" becomes "39 Steps, The" or "the matrix" becomes "Matrix, The".
+1. To find chunks from specific documents:
+```
+MATCH (d:Document)-[:HAS_CHUNK]->(c:Chunk)
+WHERE d.title CONTAINS "search term"
+RETURN d.title, c.text, c.chunk_index
+ORDER BY c.chunk_index
+```
+
+2. To find related chunks by sequence:
+```
+MATCH (c1:Chunk)-[:NEXT_CHUNK]->(c2:Chunk)
+WHERE c1.document_id = "doc_id"
+RETURN c1.text, c2.text
+ORDER BY c1.chunk_index
+```
 
 
 Schema:

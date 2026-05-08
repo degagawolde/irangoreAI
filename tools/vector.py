@@ -19,20 +19,19 @@ from langchain_core.prompts import ChatPromptTemplate
 neo4jvector = Neo4jVector.from_existing_index(
     embeddings,                              # <1>
     graph=graph,                             # <2>
-    index_name="moviePlots",                 # <3>
-    node_label="Movie",                      # <4>
-    text_node_property="plot",               # <5>
-    embedding_node_property="plotEmbedding", # <6>
+    index_name="documents",                 # <3>
+    node_label="Chunk",                      # <4>
+    text_node_property="text",               # <5>
+    embedding_node_property="embedding", # <6>
     retrieval_query="""
 RETURN
-    node.plot AS text,
+    node.text AS text,
     score,
     {
-        title: node.title,
-        directors: [ (person)-[:DIRECTED]->(node) | person.name ],
-        actors: [ (person)-[r:ACTED_IN]->(node) | [person.name, r.role] ],
-        tmdbId: node.tmdbId,
-        source: 'https://www.themoviedb.org/movie/'+ node.tmdbId
+        document_id: node.document_id,
+        title: node.document_title,
+        source: node.source_path,
+        chunk_index: node.chunk_index
     } AS metadata
 """
 )
@@ -65,7 +64,7 @@ plot_retriever = create_retrieval_chain(
 )
 # end::chain[]
 
-# tag::get_movie_plot[]
-def get_movie_plot(input):
+# tag::get_document_context[]
+def get_document_context(input):
     return plot_retriever.invoke({"input": input})
-# end::get_movie_plot[]
+# end::get_document_context[]

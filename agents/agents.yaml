@@ -1,0 +1,137 @@
+# Unified Agent Configuration
+# This file defines all available agents for the Graph RAG system
+
+agents:
+  
+  # Lightweight chat agent - minimal tools
+  chat:
+    name: "Chat Agent"
+    description: "Simple conversational agent with general chat capabilities"
+    type: "react"
+    enabled: true
+    system_prompt: "You are a helpful assistant providing information from documents. Be as helpful as possible and return as much information as possible. Do not answer any questions using your pre-trained knowledge, only use the information provided in the context."
+    tools:
+      - name: "General Chat"
+        description: "For general questions not covered by other tools"
+        type: "document_chat"
+    memory:
+      enabled: true
+      type: "neo4j_chat_history"
+    verbose: false
+
+  # Vector-based search agent - semantic similarity focus
+  vector:
+    name: "Vector Search Agent"
+    description: "Agent focused on semantic search over document chunks"
+    type: "react"
+    enabled: true
+    system_prompt: "You are a helpful assistant providing information from documents. Be as helpful as possible and return as much information as possible. Do not answer any questions using your pre-trained knowledge, only use the information provided in the context."
+    tools:
+      - name: "General Chat"
+        description: "For general questions not covered by other tools"
+        type: "document_chat"
+      - name: "Document Context Search"
+        description: "For when you need to find information from documents"
+        type: "vector_search"
+    memory:
+      enabled: true
+      type: "neo4j_chat_history"
+    verbose: false
+
+  # Cypher query agent - structured graph queries
+  cypher:
+    name: "Cypher Agent"
+    description: "Agent for structured document queries using Cypher and semantic search"
+    type: "react"
+    enabled: true
+    system_prompt: "You are a helpful assistant providing information from documents. Be as helpful as possible and return as much information as possible. Do not answer any questions using your pre-trained knowledge, only use the information provided in the context."
+    tools:
+      - name: "General Chat"
+        description: "For general questions not covered by other tools"
+        type: "document_chat"
+      - name: "Document Context Search"
+        description: "For when you need to find information from documents"
+        type: "vector_search"
+      - name: "Document Information"
+        description: "Provide information about document questions using Cypher queries"
+        type: "cypher_qa"
+    memory:
+      enabled: true
+      type: "neo4j_chat_history"
+    verbose: false
+
+  # Full-featured agent with all tools
+  full:
+    name: "Full-Featured Agent"
+    description: "Agent with all available tools for comprehensive document querying"
+    type: "react"
+    enabled: true
+    system_prompt: "You are an expert research assistant. You have access to multiple search and query tools to find comprehensive answers from documents. Always use the most appropriate tool for the question. Prioritize accuracy and cite sources when possible."
+    tools:
+      - name: "General Chat"
+        description: "For general questions not covered by other tools"
+        type: "document_chat"
+      - name: "Semantic Search"
+        description: "Search semantically similar chunks from documents"
+        type: "vector_search"
+      - name: "Graph Database Query"
+        description: "Query document relationships using Cypher"
+        type: "cypher_qa"
+      - name: "Document Ingestion"
+        description: "Load and ingest documents into the knowledge graph"
+        type: "document_ingestion"
+    memory:
+      enabled: true
+      type: "neo4j_chat_history"
+    verbose: true
+
+  # Scoped agent - task-specific
+  scoped:
+    name: "Scoped Agent"
+    description: "Agent for specific domain queries within defined scope"
+    type: "react"
+    enabled: true
+    system_prompt: "You are a specialized research assistant focused on providing accurate information. Only answer questions that can be answered from the available documents. Refuse questions outside your scope."
+    tools:
+      - name: "General Chat"
+        description: "For general questions not covered by other tools"
+        type: "document_chat"
+    memory:
+      enabled: true
+      type: "neo4j_chat_history"
+    verbose: false
+
+# Tool definitions
+tools:
+  document_chat:
+    type: "function"
+    module: "llm"
+    function: "create_chat_chain"
+    description: "General conversation chain"
+    
+  vector_search:
+    type: "function"
+    module: "tools.vector"
+    function: "get_document_context"
+    description: "Vector-based semantic search"
+    
+  cypher_qa:
+    type: "function"
+    module: "tools.cypher"
+    function: "cypher_qa"
+    description: "Cypher-based graph queries"
+    
+  document_ingestion:
+    type: "function"
+    module: "tools.document_graph_tool"
+    function: "ingest_documents"
+    description: "Document loading and ingestion"
+
+# Global agent settings
+settings:
+  default_agent: "chat"
+  timeout: 300  # seconds
+  max_iterations: 10
+  verbose_default: false
+  memory_type: "neo4j_chat_history"
+  streaming_enabled: false

@@ -105,10 +105,10 @@ NEO4J_DATABASE=neo4j
 OLLAMA_BASE_URL=http://localhost:11434
 
 # Vector Store
-VECTOR_INDEX_NAME=moviePlots
-VECTOR_NODE_LABEL=Movie
-VECTOR_TEXT_PROPERTY=plot
-VECTOR_EMBEDDING_PROPERTY=plotEmbedding
+VECTOR_INDEX_NAME=documents
+VECTOR_NODE_LABEL=Chunk
+VECTOR_TEXT_PROPERTY=text
+VECTOR_EMBEDDING_PROPERTY=embedding
 
 # Session Management
 SESSION_TIMEOUT=3600           # 1 hour
@@ -268,7 +268,7 @@ BASE_URL = "http://localhost:8000"
 response = requests.post(
     f"{BASE_URL}/chat",
     json={
-        "message": "Tell me about movies directed by Spielberg",
+        "message": "What information is available about the topic in the documents?",
         "include_sources": True
     }
 )
@@ -280,7 +280,7 @@ print(response.json()["reply"])
 response = requests.post(
     f"{BASE_URL}/chat",
     json={
-        "message": "What about his most famous films?",
+        "message": "Can you provide more details on this?",
         "session_id": session_id
     }
 )

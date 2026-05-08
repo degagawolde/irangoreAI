@@ -16,7 +16,7 @@ from schemas import (
     ErrorResponse,
 )
 from sessions import get_session_manager
-from agents import get_react_agent
+from agents import generate_response
 
 from core.exceptions import (
     ChatbotException,
@@ -168,10 +168,8 @@ async def chat(request: ChatRequest):
             else request.message
         )
 
-        # Run agent
-        agent = get_react_agent()
-        
-        reply = agent.run(agent_prompt)
+        # Run agent via unified factory (agents/agent_factory.py)
+        reply = generate_response(agent_prompt, session_id=request.session_id)
 
         # Add assistant message to session
         session_manager.add_message(request.session_id, "assistant", reply)

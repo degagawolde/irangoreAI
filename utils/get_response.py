@@ -1,4 +1,4 @@
-from agents.agent import generate_response
+from agents import generate_response
 from utils import write_message
 
 
