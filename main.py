@@ -2,6 +2,8 @@
 
 from contextlib import asynccontextmanager
 from datetime import datetime
+import re
+from typing import List
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -11,6 +13,7 @@ from core import setup_logging, get_logger
 from schemas import (
     ChatRequest,
     ChatResponse,
+    Message,
     SessionInfo,
     HealthResponse,
     ErrorResponse,
@@ -29,6 +32,59 @@ setup_logging(log_level="INFO", log_format="standard")
 logger = get_logger(__name__)
 
 settings = get_settings()
+
+
+def format_agent_reply(raw_text: str) -> str:
+    """Convert markdown-heavy LLM output into plain, readable text."""
+    if not raw_text:
+        return raw_text
+
+    lines = raw_text.replace("\r\n", "\n").split("\n")
+    cleaned_lines = []
+    table_rows = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            cleaned_lines.append("")
+            continue
+
+        # Skip markdown code fences
+        if stripped.startswith("```"):
+            continue
+
+        # Collect markdown table rows for readable conversion
+        if stripped.startswith("|") and stripped.endswith("|"):
+            if not re.fullmatch(r"\|[\s\-:|]+\|", stripped):
+                cells = [c.strip() for c in stripped.strip("|").split("|")]
+                if cells:
+                    table_rows.append(cells)
+            continue
+
+        # Convert headings and bullets to plain text
+        text = re.sub(r"^#{1,6}\s*", "", stripped)
+        text = re.sub(r"^[-*]\s+", "- ", text)
+        text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
+        text = re.sub(r"__(.*?)__", r"\1", text)
+        cleaned_lines.append(text)
+
+    # Convert markdown table to plain text section
+    if len(table_rows) >= 2:
+        cleaned_lines.append("")
+        cleaned_lines.append("Key Differences:")
+        headers = table_rows[0]
+        for row in table_rows[1:]:
+            if len(row) >= 3:
+                cleaned_lines.append(f"- {headers[0]}: {row[0]}")
+                cleaned_lines.append(f"  TBML: {row[1]}")
+                cleaned_lines.append(f"  FIBML: {row[2]}")
+            elif len(row) == 2:
+                cleaned_lines.append(f"- {row[0]}: {row[1]}")
+
+    # Normalize extra blank lines
+    formatted = "\n".join(cleaned_lines)
+    formatted = re.sub(r"\n{3,}", "\n\n", formatted).strip()
+    return formatted
 
 
 # ==================== Lifespan Events ====================
@@ -169,7 +225,8 @@ async def chat(request: ChatRequest):
         )
 
         # Run agent via unified factory (agents/agent_factory.py)
-        reply = generate_response(agent_prompt, session_id=request.session_id)
+        raw_reply = generate_response(agent_prompt, session_id=request.session_id)
+        reply = format_agent_reply(raw_reply)
 
         # Add assistant message to session
         session_manager.add_message(request.session_id, "assistant", reply)
@@ -193,6 +250,25 @@ async def chat(request: ChatRequest):
     except Exception as e:
         logger.error(f"Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+# ==================== Chat History Management Endpoints ====================
+@app.get("/history/{session_id}", response_model=List[Message])
+async def get_history(session_id: str):
+    """Get chat history."""
+    try:
+        session_manager = get_session_manager()
+        messages = session_manager.get_messages(
+            session_id, limit=settings.MAX_HISTORY_LENGTH
+        )
+
+        return messages
+
+    except SessionException as e:
+        logger.error(f"History error: {str(e)}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to get history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get history")
 
 
 # ==================== Session Management Endpoints ====================

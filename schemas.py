@@ -40,7 +40,6 @@ class ChatResponse(BaseModel):
         default=None, description="Additional metadata"
     )
 
-
 class SessionInfo(BaseModel):
     """Session information."""
 
@@ -49,8 +48,6 @@ class SessionInfo(BaseModel):
     last_accessed: datetime = Field(..., description="Last access time")
     message_count: int = Field(..., description="Number of messages")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Session metadata")
-
-
 class HealthResponse(BaseModel):
     """Health check response."""
 
