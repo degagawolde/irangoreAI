@@ -3,6 +3,7 @@
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from uuid import uuid4
+from langchain.agents import create_react_agent
 import yaml
 
 from core.logger import get_logger
@@ -12,7 +13,6 @@ from llms import get_llm
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.tools import Tool
-from langchain.agents import create_agent as _create_agent
 
 logger = get_logger(__name__)
 
@@ -134,10 +134,10 @@ Final Answer: [Your comprehensive answer with sources]
 
 If No, go back and try different tools!"""
                         
-            agent = _create_agent(
-                model=llm,
+            agent = create_react_agent(
+                llm=llm,
                 tools=tools,
-                system_prompt=full_system_prompt,
+                prompt=full_system_prompt,
             )
           
             # Cache agent
