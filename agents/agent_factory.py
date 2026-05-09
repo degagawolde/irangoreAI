@@ -8,14 +8,11 @@ import yaml
 from core.logger import get_logger
 from core.exceptions import AgentException
 from llms import get_llm
-from graph import get_graph
 
-from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
-from langchain.schema import StrOutputParser
-from langchain.tools import Tool
-from langchain_neo4j import Neo4jChatMessageHistory
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.tools import Tool
+from langchain.agents import create_agent as _create_agent
 
 logger = get_logger(__name__)
 
@@ -78,8 +75,8 @@ class AgentFactory:
             if config.get("enabled", False)
         ]
 
-    def create_agent(self, agent_name: str = None) -> RunnableWithMessageHistory:
-        """Create a fully configured agent instance."""
+    def create_agent(self, agent_name: str = None):
+        """Create a fully configured agent instance using LangGraph."""
         agent_config = self.get_agent(agent_name)
         
         # Check cache
@@ -97,68 +94,57 @@ class AgentFactory:
             # Build system prompt
             system_prompt = agent_config.get("system_prompt", "You are a helpful assistant.")
             
-            # Create agent prompt template
-            agent_prompt = PromptTemplate.from_template(f"""
-{system_prompt}
+            # Create system prompt with planning/validation
+            full_system_prompt = f"""{system_prompt}
 
-TOOLS:
-------
-You have access to the following tools:
+===== PLANNING PHASE =====
+Before answering, ALWAYS:
+1. Understand the question clearly
+2. Plan which tools you will use and why
+3. Identify what information you need
 
-{{tools}}
+===== HOW TO PROCEED =====
+Use this exact format:
 
-To use a tool, please use the following format:
+PLAN:
+- What the question is asking for
+- Which tools I will use and why
+- What information I need to gather
 
-```
-Thought: Do I need to use a tool? Yes
-Action: the action to take, should be one of [{{tool_names}}]
-Action Input: the input to the action
-Observation: the result of the action
-```
+Then proceed to execute:
 
-When you have a response to say to the Human, or if you do not need to use a tool, you MUST use the format:
+Thought: [Your thinking about the plan]
+Action: [tool to use]
+Action Input: [input for the tool]
+Observation: [result from tool]
 
-```
-Thought: Do I need to use a tool? No
-Final Answer: [your response here]
-```
+Repeat until you have enough information.
 
-Previous conversation history:
-{{chat_history}}
+===== VALIDATION PHASE =====
+Before giving Final Answer:
+1. Verify your answer is relevant to the question
+2. Check if sources are from documents
+3. If answer is incomplete/not from documents: TRY AGAIN with different tools
 
-New input: {{input}}
-{{agent_scratchpad}}
-""")
-            
-            # Create React agent
-            agent = create_react_agent(llm, tools, agent_prompt)
-            
-            # Create executor
-            agent_executor = AgentExecutor(
-                agent=agent,
+===== RESPONSE FORMAT =====
+When you're ready with a validated answer:
+
+Thought: Is my answer relevant and from the documents? Yes/No
+Final Answer: [Your comprehensive answer with sources]
+
+If No, go back and try different tools!"""
+                        
+            agent = _create_agent(
+                model=llm,
                 tools=tools,
-                verbose=agent_config.get("verbose", False),
-                max_iterations=self._config.get("settings", {}).get("max_iterations", 10),
-                handle_parsing_errors=True
+                system_prompt=full_system_prompt,
             )
-            
-            # Add memory
-            memory_config = agent_config.get("memory", {})
-            if memory_config.get("enabled", True):
-                chat_agent = RunnableWithMessageHistory(
-                    agent_executor,
-                    self._get_memory,
-                    input_messages_key="input",
-                    history_messages_key="chat_history",
-                )
-            else:
-                chat_agent = agent_executor
-            
+          
             # Cache agent
-            self._agents_cache[agent_name] = chat_agent
+            self._agents_cache[agent_name] = agent
             
             logger.info(f"Agent '{agent_name}' created successfully")
-            return chat_agent
+            return agent
         
         except Exception as e:
             logger.error(f"Failed to create agent '{agent_name}': {str(e)}")
@@ -206,25 +192,39 @@ New input: {{input}}
         
         return tools
 
-    @staticmethod
-    def _get_memory(session_id: str) -> Neo4jChatMessageHistory:
-        """Get chat memory for session."""
-        graph = get_graph()
-        return Neo4jChatMessageHistory(session_id=session_id, graph=graph)
-
     def generate_response(
         self, user_input: str, agent_name: str = None, session_id: Optional[str] = None
     ) -> str:
-        """Generate response using specified agent."""
+        """Generate response using specified agent with LangGraph persistence."""
         agent = self.create_agent(agent_name)
         active_session_id = session_id or str(uuid4())
         
         try:
+            # LangGraph handles memory/persistence via checkpointer configuration
+            # No need for manual memory management
             response = agent.invoke(
-                {"input": user_input},
-                {"configurable": {"session_id": active_session_id}},
+                {"messages": [{"role": "user", "content": user_input}]},
+                {"configurable": {"thread_id": active_session_id}},
             )
-            return response.get("output", "")
+            
+            # Extract last message content from either dict-style or message-object style payloads.
+            messages = response.get("messages") if isinstance(response, dict) else None
+            if messages:
+                last_message = messages[-1]
+                if isinstance(last_message, dict):
+                    return last_message.get("content", "")
+                content = getattr(last_message, "content", "")
+                if isinstance(content, list):
+                    # Some providers return content blocks; join text parts.
+                    text_parts = []
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                        elif isinstance(block, str):
+                            text_parts.append(block)
+                    return "\n".join([p for p in text_parts if p]).strip()
+                return content or ""
+            return ""
         
         except Exception as e:
             logger.error(f"Agent execution failed: {str(e)}")
@@ -241,8 +241,8 @@ def get_agent_factory() -> AgentFactory:
     return AgentFactory()
 
 
-def create_agent(agent_name: str = None) -> RunnableWithMessageHistory:
-    """Create a new agent instance."""
+def create_agent(agent_name: str = None):
+    """Create a new agent instance using LangGraph."""
     factory = get_agent_factory()
     return factory.create_agent(agent_name)
 

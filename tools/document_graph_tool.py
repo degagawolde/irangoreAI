@@ -6,7 +6,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import time
 
 from config import get_settings
@@ -24,6 +24,7 @@ logger = get_logger(__name__)
 
 
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".rst",".docx",".pdf"}
+PDF_PAGE_BREAK = "\n\n<<<PAGE_BREAK>>>\n\n"
 
 
 class DocumentGraphIngestionTool:
@@ -53,7 +54,8 @@ class DocumentGraphIngestionTool:
         documents: List[Dict[str, Any]] = []
         for file_path in files:
             try:
-                text = self._read_document_text(file_path).strip()
+                payload = self._read_document_payload(file_path)
+                text = payload["content"].strip()
                 if not text:
                     logger.warning(f"Skipping empty document: {file_path}")
                     continue
@@ -69,6 +71,7 @@ class DocumentGraphIngestionTool:
                         "source_path": str(file_path.resolve()),
                         "title": file_path.name,
                         "content": text,
+                        "page_spans": payload.get("page_spans", []),
                     }
                 )
             except Exception as e:
@@ -106,13 +109,14 @@ class DocumentGraphIngestionTool:
         for doc in documents:
             document_id = hashlib.sha256(doc["source_path"].encode("utf-8")).hexdigest()
             chunks = splitter.split_text(doc["content"])
+            chunk_spans = self._build_chunk_spans(doc["content"], chunks)
             logger.info(
                 "Chunking document: title=%s doc_id=%s total_chunks=%s",
                 doc["title"],
                 document_id,
                 len(chunks),
             )
-            for idx, chunk_text in enumerate(chunks):
+            for idx, (chunk_text, span) in enumerate(zip(chunks, chunk_spans)):
                 normalized = chunk_text.strip()
                 if not normalized:
                     logger.debug(
@@ -138,6 +142,10 @@ class DocumentGraphIngestionTool:
                         "chunk_index": idx,
                         "chunk_id": f"{document_id}:{idx}",
                         "text": normalized,
+                        "page_number": self._resolve_page_number(
+                            doc.get("page_spans", []), span[0]
+                        ),
+                        "line_number": self._line_number_for_offset(doc["content"], span[0]),
                     }
                 )
 
@@ -188,7 +196,9 @@ SET
   c.chunk_index = row.chunk_index,
   c.text = row.text,
   c.embedding = row.embedding,
-  c.source_path = row.source_path
+  c.source_path = row.source_path,
+  c.page_number = row.page_number,
+  c.line_number = row.line_number
 MERGE (d)-[:HAS_CHUNK]->(c)
 WITH row, c
 OPTIONAL MATCH (prev:Chunk {id: row.document_id + ':' + toString(row.chunk_index - 1)})
@@ -243,17 +253,19 @@ OPTIONS {{
         except Exception as e:
             raise GraphException(f"Failed to create/verify vector index: {str(e)}")
 
-    def _read_document_text(self, file_path: Path) -> str:
-        """Read text from supported files with format-aware handlers."""
+    def _read_document_payload(self, file_path: Path) -> Dict[str, Any]:
+        """Read text + optional page spans from supported files."""
         suffix = file_path.suffix.lower()
         if suffix in {".txt", ".md", ".markdown", ".rst"}:
-            return file_path.read_text(encoding="utf-8", errors="ignore")
+            return {"content": file_path.read_text(encoding="utf-8", errors="ignore"), "page_spans": []}
 
         if suffix == ".pdf":
             reader = PdfReader(str(file_path))
-            extracted = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+            page_texts = [(page.extract_text() or "") for page in reader.pages]
+            extracted = PDF_PAGE_BREAK.join(page_texts).strip()
             if extracted:
-                return extracted
+                cleaned_content, page_spans = self._build_pdf_page_spans_from_joined_text(extracted)
+                return {"content": cleaned_content, "page_spans": page_spans}
 
             if self.settings.PDF_OCR_FALLBACK_ENABLED:
                 logger.warning(
@@ -262,13 +274,14 @@ OPTIONS {{
                 )
                 ocr_text = self._extract_pdf_text_with_ocr(file_path)
                 if ocr_text.strip():
-                    return ocr_text
+                    cleaned_content, page_spans = self._build_pdf_page_spans_from_joined_text(ocr_text)
+                    return {"content": cleaned_content, "page_spans": page_spans}
                 logger.warning("OCR fallback returned empty text for PDF: %s", str(file_path))
-            return extracted
+            return {"content": extracted, "page_spans": []}
 
         if suffix == ".docx":
             doc = Document(str(file_path))
-            return "\n".join(p.text for p in doc.paragraphs if p.text)
+            return {"content": "\n".join(p.text for p in doc.paragraphs if p.text), "page_spans": []}
 
         raise GraphException(f"Unsupported extension encountered: {suffix}")
 
@@ -295,10 +308,58 @@ OPTIONS {{
                 cleaned = text.strip()
                 if cleaned:
                     ocr_chunks.append(cleaned)
-            return "\n".join(ocr_chunks)
+            return PDF_PAGE_BREAK.join(ocr_chunks)
         except Exception as e:
             logger.warning("OCR fallback failed for %s: %s", str(file_path), str(e))
             return ""
+
+    def _build_chunk_spans(self, content: str, chunks: List[str]) -> List[Tuple[int, int]]:
+        """Map each chunk to (start, end) offsets in original content."""
+        spans: List[Tuple[int, int]] = []
+        cursor = 0
+        for chunk in chunks:
+            if not chunk:
+                spans.append((cursor, cursor))
+                continue
+            idx = content.find(chunk, cursor)
+            if idx == -1:
+                idx = content.find(chunk)
+            if idx == -1:
+                idx = cursor
+            end = idx + len(chunk)
+            spans.append((idx, end))
+            cursor = max(cursor, end - 1)
+        return spans
+
+    def _line_number_for_offset(self, content: str, offset: int) -> int:
+        """Convert character offset to 1-based line number."""
+        if offset <= 0:
+            return 1
+        return content.count("\n", 0, min(offset, len(content))) + 1
+
+    def _build_pdf_page_spans_from_joined_text(self, joined_text: str) -> Tuple[str, List[Dict[str, int]]]:
+        """Create page spans from marker-delimited PDF text."""
+        parts = joined_text.split(PDF_PAGE_BREAK)
+        content_parts: List[str] = []
+        spans: List[Dict[str, int]] = []
+        cursor = 0
+        for page_idx, part in enumerate(parts, start=1):
+            clean = part.strip()
+            if not clean:
+                continue
+            start = cursor
+            end = start + len(clean)
+            spans.append({"page_number": page_idx, "start": start, "end": end})
+            content_parts.append(clean)
+            cursor = end + 1
+        return "\n".join(content_parts), spans
+
+    def _resolve_page_number(self, page_spans: List[Dict[str, int]], offset: int) -> Optional[int]:
+        """Resolve page number from char offset."""
+        for span in page_spans:
+            if span["start"] <= offset <= span["end"]:
+                return span["page_number"]
+        return None
 
     def _embed_in_batches(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings in batches to avoid oversized requests/hangs."""

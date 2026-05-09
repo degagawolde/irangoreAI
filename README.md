@@ -1,466 +1,155 @@
-# Chatbot Backend - Graph RAG with Agentic AI
+# IranGoreBackend
 
-A production-ready chatbot backend powered by agentic AI with Graph Retrieval Augmented Generation (RAG) capabilities.
+Unified chatbot backend using Graph RAG + Agentic AI, with a YAML-driven multi-agent system, planning/validation workflow, and Docker-ready deployment.
 
-## Overview
+## At a Glance
 
-This chatbot backend combines:
-- **Agentic AI**: ReAct agents for intelligent decision-making and tool usage
-- **Graph RAG**: Leverages Neo4j for structured knowledge retrieval
-- **Vector Search**: Semantic search capabilities for document retrieval
-- **LLM Integration**: Support for Ollama, OpenAI, and other LLM providers
-- **Session Management**: Persistent conversation history
-- **FastAPI**: Modern, production-ready API
+- FastAPI backend for chat + session APIs
+- Graph RAG with Neo4j + semantic/vector search
+- Multi-agent architecture (`chat`, `vector`, `cypher`, `full`, `scoped`)
+- Centralized agent/tool config in `agents/agents.yaml`
+- Planning → Execute → Validate → Retry response flow
+- Local + Docker deployment paths
 
-## Architecture
+## Core Features
 
-```
-chatbot-backend/
-├── main.py                 # FastAPI application
-├── config.py              # Configuration management
-├── schemas.py             # Pydantic models
-├── core/                  # Core utilities
-│   ├── logger.py         # Logging setup
-│   ├── exceptions.py     # Custom exceptions
-│   └── __init__.py
-├── graph/                 # Graph database management
-│   ├── manager.py        # Neo4j connection manager
-│   └── __init__.py
-├── llms/                  # LLM management
-│   ├── manager.py        # LLM initialization
-│   └── __init__.py
-├── agents/                # Agentic AI
-│   ├── react_agent.py    # ReAct agent implementation
-│   └── __init__.py
-├── tools/                 # Agent tools
-│   ├── cypher_tool.py    # Graph query tool
-│   ├── vector_tool.py    # Vector search tool
-│   └── __init__.py
-├── sessions/              # Session management
-│   ├── manager.py        # Session lifecycle
-│   └── __init__.py
-├── requirements.txt       # Python dependencies
-├── .env.example          # Environment template
-└── README.md             # This file
-```
+- Agentic AI via ReAct-style tool orchestration
+- Graph + vector retrieval for grounded responses
+- Structured configuration with environment-driven settings
+- Session-aware conversations and memory handling
+- Production-oriented logging, health checks, and error handling
 
-## Installation
+## Project Structure
 
-### Prerequisites
+- `main.py`: FastAPI app and endpoints
+- `config.py`: settings management
+- `schemas.py`: request/response models
+- `core/`: logging and exceptions
+- `agents/`: agent factory, YAML config, agent docs
+- `tools/`: document/vector/cypher/ingestion tools
+- `graph/`: Neo4j integration
+- `llms/`: LLM provider integration
+- `sessions/`: session lifecycle and history
+- `deployment/`, `Dockerfile`, `docker-compose.yml`: deployment assets
 
-- Python 3.9+
-- Neo4j database (running)
-- Ollama or OpenAI API key (for LLM)
+## Agent System Summary
 
-### Setup
+The unified agent system is built around:
 
-1. **Clone and navigate to project**
-```bash
-cd IranGoreBackend
-```
+- `agents/agents.yaml`: source of truth for agents, tools, settings
+- `agents/agent_factory.py`: loads config, builds/caches agents, binds tools
 
-2. **Create virtual environment**
+### Available Agents
+
+- `chat`: lightweight chat/doc interaction
+- `vector`: semantic search focused
+- `cypher`: graph + vector + chat (recommended default)
+- `full`: all tools enabled for complex workflows
+- `scoped`: domain-specific constrained behavior
+
+### Planning and Validation Flow
+
+Each response follows:
+
+1. Plan what the question needs and which tools to use
+2. Execute tool calls strategically
+3. Validate relevance, grounding, and completeness
+4. Retry with alternate strategy if validation fails
+
+This is documented across the planning docs and reflected in the agent prompts/config.
+
+## Quick Start
+
+### Option 1: Local development
+
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-3. **Install dependencies**
-```bash
+source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-4. **Configure environment**
-```bash
 cp .env.example .env
-# Edit .env with your configuration
-```
-
-5. **Run the application**
-```bash
+python setup_guide.py
 fastapi dev main.py
 ```
 
-The API will be available at `http://localhost:8000`
-
-## Configuration
-
-### Environment Variables
-
-Key configuration variables in `.env`:
-
-```
-# LLM Provider
-LLM_PROVIDER=ollama              # ollama, openai, etc.
-LLM_MODEL=qwen3:8b             # Model name
-LLM_TEMPERATURE=0.7            # Temperature for generation
-
-# Neo4j Database
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=password
-NEO4J_DATABASE=neo4j
-
-# Ollama (if using local models)
-OLLAMA_BASE_URL=http://localhost:11434
-
-# Vector Store
-VECTOR_INDEX_NAME=documents
-VECTOR_NODE_LABEL=Chunk
-VECTOR_TEXT_PROPERTY=text
-VECTOR_EMBEDDING_PROPERTY=embedding
-
-# Session Management
-SESSION_TIMEOUT=3600           # 1 hour
-MAX_HISTORY_LENGTH=50          # Max messages in history
-```
-
-## API Endpoints
-
-### Chat Endpoints
-
-#### Create Chat Session
-```
-POST /chat
-Content-Type: application/json
-
-{
-  "message": "What is the capital of France?",
-  "session_id": null,  # Optional, creates new session if null
-  "include_sources": false
-}
-
-Response:
-{
-  "reply": "Paris is the capital of France.",
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "message_count": 2,
-  "sources": null,
-  "metadata": {"model": "qwen3:8b"}
-}
-```
-
-#### Get Session Info
-```
-GET /sessions/{session_id}
-
-Response:
-{
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "created_at": "2024-01-15T10:30:00",
-  "last_accessed": "2024-01-15T10:35:00",
-  "message_count": 5,
-  "metadata": {}
-}
-```
-
-#### List All Sessions
-```
-GET /sessions
-
-Response:
-{
-  "total": 3,
-  "sessions": [
-    {
-      "session_id": "...",
-      "created_at": "...",
-      "message_count": 5
-    }
-  ]
-}
-```
-
-#### Delete Session
-```
-DELETE /sessions/{session_id}
-
-Response:
-{
-  "status": "deleted",
-  "session_id": "550e8400-e29b-41d4-a716-446655440000"
-}
-```
-
-### System Endpoints
-
-#### Health Check
-```
-GET /health
-
-Response:
-{
-  "status": "healthy",
-  "version": "1.0.0",
-  "timestamp": "2024-01-15T10:30:00",
-  "services": {
-    "llm": "ok",
-    "graph": "ok",
-    "session_manager": "ok"
-  }
-}
-```
-
-## Core Components
-
-### 1. Configuration Management (`config.py`)
-
-Centralized configuration using Pydantic Settings:
-- Loads from environment variables
-- Type-safe configuration
-- Support for different LLM providers
-- Configurable vector store
-
-### 2. Logging (`core/logger.py`)
-
-Production-grade logging:
-- Console and file handlers
-- Rotating file handlers
-- Separate error logs
-- Structured logging format
-
-### 3. Graph Management (`graph/manager.py`)
-
-Neo4j integration:
-- Connection pooling
-- Query execution with error handling
-- Schema inspection
-- Singleton pattern for single connection
-
-### 4. LLM Management (`llms/manager.py`)
-
-LLM abstraction layer:
-- Support for multiple providers (Ollama, OpenAI, etc.)
-- Unified embeddings interface
-- Lazy initialization
-- Singleton pattern
-
-### 5. Agent Framework (`agents/react_agent.py`)
-
-ReAct agent implementation:
-- Tool registration
-- Agent execution
-- Error handling
-- Conversation context
-
-### 6. Tools (`tools/`)
-
-- **Cypher Tool**: Graph database queries
-- **Vector Tool**: Semantic search
-
-### 7. Session Management (`sessions/manager.py`)
-
-- Session lifecycle management
-- Message history tracking
-- Session expiration
-- In-memory storage (can extend to Redis/DB)
-
-## Usage Examples
-
-### Python Client Example
-
-```python
-import requests
-
-BASE_URL = "http://localhost:8000"
-
-# Create a chat session
-response = requests.post(
-    f"{BASE_URL}/chat",
-    json={
-        "message": "What information is available about the topic in the documents?",
-        "include_sources": True
-    }
-)
-
-session_id = response.json()["session_id"]
-print(response.json()["reply"])
-
-# Continue conversation
-response = requests.post(
-    f"{BASE_URL}/chat",
-    json={
-        "message": "Can you provide more details on this?",
-        "session_id": session_id
-    }
-)
-
-print(response.json()["reply"])
-
-# Get session info
-response = requests.get(f"{BASE_URL}/sessions/{session_id}")
-print(response.json())
-```
-
-### cURL Examples
+### Option 2: Docker Compose
 
 ```bash
-# Chat
+cp .env.example .env
+docker-compose up -d
+```
+
+## Basic Verification
+
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/agents
 curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "Hello"}'
-
-# Get session info
-curl http://localhost:8000/sessions/550e8400-e29b-41d4-a716-446655440000
-
-# Health check
-curl http://localhost:8000/health
+  -d '{"message":"Hello","agent_name":"cypher"}'
 ```
 
-## Error Handling
+## API Endpoints (Main)
 
-The API uses standard HTTP status codes:
+- `POST /chat`
+- `POST /sessions`
+- `GET /sessions`
+- `GET /sessions/{id}`
+- `DELETE /sessions/{id}`
+- `GET /agents`
+- `GET /health`
+- `GET /docs` and `GET /redoc`
 
-- **200 OK**: Successful request
-- **400 Bad Request**: Invalid session or request format
-- **404 Not Found**: Session not found
-- **500 Internal Server Error**: Server or service error
-- **503 Service Unavailable**: One or more services down
+## Configuration Essentials
 
-Error responses include:
-```json
-{
-  "error": "Error message",
-  "error_code": "ERROR_CODE",
-  "timestamp": "2024-01-15T10:30:00",
-  "details": {}
-}
-```
+Set these in `.env`:
 
-## Extending the System
+- `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`
+- `LLM_PROVIDER` (e.g., `ollama` or `openai`)
+- `LLM_MODEL`, `LLM_TEMPERATURE`
+- `OLLAMA_BASE_URL` (if using Ollama)
+- `OPENAI_API_KEY` (if using OpenAI)
+- `SESSION_TIMEOUT`, `MAX_HISTORY_LENGTH`
 
-### Adding Custom Tools
+## Consolidated Documentation Map
 
-```python
-from agents import get_react_agent
-from langchain_core.tools import Tool
+This README summarizes the following docs and text guides:
 
-def custom_function(query: str) -> str:
-    # Your implementation
-    return "result"
+### General backend/refactor docs
 
-agent = get_react_agent()
-agent.toolkit.register_tool(
-    name="Custom Tool",
-    description="Description of what this tool does",
-    func=custom_function
-)
-```
+- `START_HERE.txt`: onboarding and run flow
+- `COMPLETION_REPORT.md`: high-level completion summary
+- `REFACTORING_SUMMARY.md`: architecture/code changes
+- `QUICKSTART.md`: setup/deployment options
 
-### Adding New LLM Providers
+### Unified agent architecture docs
 
-Extend `LLMManager._initialize_llm()` in `llms/manager.py`:
+- `UNIFIED_STRUCTURE.md`: architecture overview
+- `IMPLEMENTATION_SUMMARY.md`: implementation recap
+- `AGENTS_GUIDE.md`: usage/customization guide
+- `QUICK_REFERENCE.md`: fast commands and patterns
+- `STRUCTURE_DIAGRAM.txt`: visual architecture
+- `FILES_MANIFEST.txt`: file inventory
 
-```python
-elif settings.LLM_PROVIDER.lower() == "anthropic":
-    self._initialize_anthropic(settings)
-```
+### Planning/validation and migration docs
 
-### Persistent Session Storage
+- `PLANNING_AND_VALIDATION.md`: planning/validation model
+- `AGENT_QUICKSTART.md`: quick practical usage
+- `COMPLETE_AGENT_GUIDE.md`: full functional guide
+- `AGENT_PLANNING_IMPLEMENTATION.md`: implementation details
+- `AGENT_IMPLEMENTATION_CHECKLIST.md`: verification checklist
+- `AGENT_PLANNING_COMPLETE.md`: completion summary
+- `AGENT_FILES_MANIFEST.md`: planning-related file manifest
+- `AGENT_DOCUMENTATION_INDEX.md`: documentation index
+- `LANGGRAPH_MIGRATION.md`: LangChain → LangGraph migration notes
 
-Replace in-memory `SessionManager` with database-backed storage:
-- Add SQLAlchemy models
-- Implement session persistence
-- Add session migration to Redis for high-traffic scenarios
+## Troubleshooting (Common)
 
-## Deployment
+- Neo4j failures: verify URI/credentials and that Neo4j is running
+- LLM failures: verify provider config, key, or Ollama server
+- Port conflicts: run on another port (e.g., `--port 8001`)
+- Import/module issues: ensure `.venv` is active and deps are installed
 
-### Using Docker
+## Notes
 
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-
-CMD ["fastapi", "dev", "main.py"]
-```
-
-### Using Gunicorn
-
-```bash
-pip install gunicorn
-gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app
-```
-
-## Monitoring
-
-The application includes:
-- Structured logging to `logs/chatbot.log`
-- Error logging to `logs/error.log`
-- Health check endpoint
-- Session metrics
-
-## Performance Considerations
-
-- **Conversation Context**: Limited to `MAX_HISTORY_LENGTH` messages
-- **Session Timeout**: Automatic cleanup of expired sessions
-- **Vector Search**: K-nearest neighbors default to 5 results
-- **Agent Iterations**: Maximum 10 iterations per query
-
-## Troubleshooting
-
-### Neo4j Connection Failed
-- Verify Neo4j is running
-- Check connection URI in `.env`
-- Verify credentials
-
-### LLM Not Responding
-- For Ollama: Check `OLLAMA_BASE_URL` and ensure Ollama is running
-- For OpenAI: Verify `OPENAI_API_KEY` is set
-
-### Session Issues
-- Sessions expire after `SESSION_TIMEOUT` seconds
-- Use `/sessions/{id}` to check session status
-- Create new session if expired
-
-## Development
-
-### Running Tests
-```bash
-pytest tests/
-```
-
-### Code Quality
-```bash
-# Format code
-black .
-
-# Lint
-pylint *.py
-
-# Type checking
-mypy .
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Support
-
-For issues, questions, or suggestions, please open an issue on GitHub.
-
-## Roadmap
-
-- [ ] Redis session storage
-- [ ] Database persistence layer
-- [ ] Advanced analytics
-- [ ] Multi-agent orchestration
-- [ ] Function calling support
-- [ ] Streaming responses
-- [ ] WebSocket support for real-time chat
-
----
-
-**Version**: 1.0.0  
-**Last Updated**: January 2024
+- This repository contains extensive historical and implementation docs.
+- This `README.md` is intended as the single entry point summarizing all `.md` and `.txt` guides currently in the project.

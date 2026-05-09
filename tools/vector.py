@@ -6,8 +6,8 @@ from graph import graph
 from langchain_neo4j import Neo4jVector
 # end::import_vector[]
 # tag::import_chain[]
-from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
+from langchain_core.runnables import create_stuff_documents_chain
 # end::import_chain[]
 
 # tag::import_chat_prompt[]

@@ -19,7 +19,8 @@ from schemas import (
     ErrorResponse,
 )
 from sessions import get_session_manager
-from agents import generate_response
+from agents import generate_response, get_enabled_agents
+from tools.vector_tool import semantic_search
 
 from core.exceptions import (
     ChatbotException,
@@ -32,6 +33,45 @@ setup_logging(log_level="INFO", log_format="standard")
 logger = get_logger(__name__)
 
 settings = get_settings()
+
+def build_sources(query: str, k: int = 5) -> List[dict]:
+    """Build source entries from semantic search results."""
+    try:
+        results = semantic_search(query, k=k)
+        sources: List[dict] = []
+
+        for doc in results:
+            metadata = getattr(doc, "metadata", {}) or {}
+            properties = metadata.get("properties", {}) if isinstance(metadata, dict) else {}
+
+            source_path = (
+                metadata.get("source_path")
+                or properties.get("source_path")
+                or properties.get("source")
+            )
+            document_title = (
+                metadata.get("document_title")
+                or properties.get("document_title")
+                or properties.get("title")
+            )
+            page_number = metadata.get("page_number") or properties.get("page_number")
+            line_number = metadata.get("line_number") or properties.get("line_number")
+            chunk_index = metadata.get("chunk_index") or properties.get("chunk_index")
+
+            sources.append(
+                {
+                    "source": source_path,
+                    "document": document_title,
+                    "page": page_number,
+                    "line": line_number,
+                    "chunk_index": chunk_index,
+                }
+            )
+
+        return sources
+    except Exception as e:
+        logger.warning(f"Failed to build sources: {str(e)}")
+        return []
 
 
 def format_agent_reply(raw_text: str) -> str:
@@ -224,8 +264,13 @@ async def chat(request: ChatRequest):
             else request.message
         )
 
-        # Run agent via unified factory (agents/agent_factory.py)
-        raw_reply = generate_response(agent_prompt, session_id=request.session_id)
+        # Run agent via unified factory with planning and validation
+        # Cypher agent has comprehensive planning, validation, and retry capabilities
+        raw_reply = generate_response(
+            agent_prompt, 
+            session_id=request.session_id,
+            agent_name=getattr(request, 'agent_name', 'cypher')  # Default to cypher for best results
+        )
         reply = format_agent_reply(raw_reply)
 
         # Add assistant message to session
@@ -233,11 +278,13 @@ async def chat(request: ChatRequest):
 
         messages = session_manager.get_messages(request.session_id)
 
+        sources = build_sources(request.message) if request.include_sources else None
+
         return ChatResponse(
             reply=reply,
             session_id=request.session_id,
             message_count=len(messages),
-            sources=None,  # Can be populated if include_sources=True
+            sources=sources,
             metadata={"model": settings.LLM_MODEL},
         )
 
@@ -334,6 +381,23 @@ async def list_sessions():
     except Exception as e:
         logger.error(f"Failed to list sessions: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to list sessions")
+
+
+# ==================== Agent Management Endpoints ====================
+@app.get("/agents")
+async def list_agents():
+    """List all available agents and their capabilities."""
+    try:
+        agents = get_enabled_agents()
+        return {
+            "total": len(agents),
+            "agents": agents,
+            "default_agent": "cypher",
+            "info": "Agents support planning, validation, and retry logic for intelligent reasoning"
+        }
+    except Exception as e:
+        logger.error(f"Failed to list agents: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list agents")
 
 
 # ==================== Root Endpoint ====================

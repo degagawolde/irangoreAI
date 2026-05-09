@@ -25,6 +25,9 @@ class ChatRequest(BaseModel):
     include_sources: bool = Field(
         default=False, description="Include source documents in response"
     )
+    agent_name: Optional[str] = Field(
+        default="cypher", description="Agent to use: chat, vector, cypher, full, or scoped"
+    )
 
 
 class ChatResponse(BaseModel):

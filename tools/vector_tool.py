@@ -63,7 +63,13 @@ RETURN
     score,
     {{
         node_id: id(node),
-        properties: properties(node)
+        properties: properties(node),
+        document_id: node.document_id,
+        document_title: node.document_title,
+        source_path: node.source_path,
+        chunk_index: node.chunk_index,
+        page_number: node.page_number,
+        line_number: node.line_number
     }} AS metadata
 """
 

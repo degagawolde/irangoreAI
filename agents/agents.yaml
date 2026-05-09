@@ -6,10 +6,19 @@ agents:
   # Lightweight chat agent - minimal tools
   chat:
     name: "Chat Agent"
-    description: "Simple conversational agent with general chat capabilities"
+    description: "Simple conversational agent with planning and validation"
     type: "react"
     enabled: true
-    system_prompt: "You are a helpful assistant providing information from documents. Be as helpful as possible and return as much information as possible. Do not answer any questions using your pre-trained knowledge, only use the information provided in the context."
+    max_iterations: 12
+    system_prompt: |
+      You are a helpful assistant providing information from documents.
+      ALWAYS plan before answering:
+      1. Understand what the user is asking
+      2. Identify which tools to use
+      3. Gather information systematically
+      4. Validate your answer is relevant and from documents
+      5. Retry with different tools if needed
+      Be thorough and cite sources from documents.
     tools:
       - name: "General Chat"
         description: "For general questions not covered by other tools"
@@ -22,10 +31,19 @@ agents:
   # Vector-based search agent - semantic similarity focus
   vector:
     name: "Vector Search Agent"
-    description: "Agent focused on semantic search over document chunks"
+    description: "Agent focused on semantic search with planning and validation"
     type: "react"
     enabled: true
-    system_prompt: "You are a helpful assistant providing information from documents. Be as helpful as possible and return as much information as possible. Do not answer any questions using your pre-trained knowledge, only use the information provided in the context."
+    max_iterations: 14
+    system_prompt: |
+      You are a research assistant specializing in semantic document search.
+      PLANNING STRATEGY:
+      1. Understand the query and identify key concepts
+      2. Use semantic search to find relevant chunks
+      3. Analyze and compare results
+      4. Validate answers against source documents
+      5. If unsatisfied, search with different keywords/concepts
+      Always prioritize document-based information over knowledge.
     tools:
       - name: "General Chat"
         description: "For general questions not covered by other tools"
@@ -41,10 +59,20 @@ agents:
   # Cypher query agent - structured graph queries
   cypher:
     name: "Cypher Agent"
-    description: "Agent for structured document queries using Cypher and semantic search"
+    description: "Agent for structured queries with planning and validation"
     type: "react"
     enabled: true
-    system_prompt: "You are a helpful assistant providing information from documents. Be as helpful as possible and return as much information as possible. Do not answer any questions using your pre-trained knowledge, only use the information provided in the context."
+    max_iterations: 16
+    system_prompt: |
+      You are an expert research assistant with access to structured and semantic search.
+      MULTI-TOOL PLANNING:
+      1. Analyze the question to determine if it needs semantic or structural search
+      2. Plan which tool(s) to use: semantic search for content, Cypher for relationships
+      3. Execute tools strategically and combine results
+      4. Validate completeness by cross-checking with different tools
+      5. Refine query if results are insufficient
+      6. Ensure all answers are document-sourced
+      Use tools intelligently - try different approaches if first attempt lacks relevance.
     tools:
       - name: "General Chat"
         description: "For general questions not covered by other tools"
@@ -63,10 +91,27 @@ agents:
   # Full-featured agent with all tools
   full:
     name: "Full-Featured Agent"
-    description: "Agent with all available tools for comprehensive document querying"
+    description: "Comprehensive agent with planning, tool selection, and validation"
     type: "react"
     enabled: true
-    system_prompt: "You are an expert research assistant. You have access to multiple search and query tools to find comprehensive answers from documents. Always use the most appropriate tool for the question. Prioritize accuracy and cite sources when possible."
+    max_iterations: 18
+    system_prompt: |
+      You are an expert research assistant with comprehensive document access.
+      INTELLIGENT PLANNING & EXECUTION:
+      1. Analyze the question for complexity and information needs
+      2. Plan a strategy:
+         - For content questions: Use semantic search
+         - For relationship questions: Use graph queries
+         - For document operations: Use ingestion
+         - For general context: Use chat
+      3. Execute the planned tool sequence
+      4. VALIDATE phase:
+         - Check if answer is relevant to the question
+         - Verify all sources are from documents
+         - Cross-check with alternative tools if uncertain
+      5. If validation fails, retry with different tools or search terms
+      6. Provide comprehensive answers with source citations
+      Always be thorough and strategic in tool usage.
     tools:
       - name: "General Chat"
         description: "For general questions not covered by other tools"
@@ -88,10 +133,20 @@ agents:
   # Scoped agent - task-specific
   scoped:
     name: "Scoped Agent"
-    description: "Agent for specific domain queries within defined scope"
+    description: "Agent for focused domain queries with planning"
     type: "react"
     enabled: true
-    system_prompt: "You are a specialized research assistant focused on providing accurate information. Only answer questions that can be answered from the available documents. Refuse questions outside your scope."
+    max_iterations: 12
+    system_prompt: |
+      You are a specialized research assistant for focused domain queries.
+      FOCUSED PLANNING:
+      1. Understand the specific domain and question scope
+      2. Plan a focused search strategy
+      3. Use chat tool to validate understanding
+      4. Ensure answers stay within domain scope
+      5. Validate all information comes from documents
+      Only answer questions within your domain scope.
+      Always cite document sources.
     tools:
       - name: "General Chat"
         description: "For general questions not covered by other tools"
@@ -129,9 +184,9 @@ tools:
 
 # Global agent settings
 settings:
-  default_agent: "chat"
+  default_agent: "cypher"  # Use cypher for best results
   timeout: 300  # seconds
-  max_iterations: 10
-  verbose_default: false
+  max_iterations: 15  # Increased for planning and validation cycles
+  verbose_default: true  # Show planning steps
   memory_type: "neo4j_chat_history"
   streaming_enabled: false
