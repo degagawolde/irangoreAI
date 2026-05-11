@@ -24,7 +24,8 @@ INSTRUCTIONS:
 4. Use ONLY relationship types and properties that exist in the schema
 5. Do NOT invent nodes, relationships, or properties that don't exist
 6. Do NOT return embedding properties in results
-7. Always start your response with either a valid Cypher query starting with MATCH/RETURN, or with "UNABLE_TO_ANSWER:"
+7. IMPORTANT: Only access node properties that are GUARANTEED to exist. Use properties() function to safely access all properties.
+8. Always start your response with either a valid Cypher query starting with MATCH/RETURN, or with "UNABLE_TO_ANSWER:"
 
 
 Example Cypher Statements:
@@ -33,7 +34,7 @@ Example Cypher Statements:
 ```
 MATCH (d:Document)-[:HAS_CHUNK]->(c:Chunk)
 WHERE d.title CONTAINS "search term"
-RETURN d.title, c.text, c.chunk_index
+RETURN d.title, c.text, c.chunk_index, properties(c) AS chunk_properties
 ORDER BY c.chunk_index
 ```
 
@@ -41,7 +42,7 @@ ORDER BY c.chunk_index
 ```
 MATCH (c1:Chunk)-[:NEXT_CHUNK]->(c2:Chunk)
 WHERE c1.document_id = "doc_id"
-RETURN c1.text, c2.text
+RETURN c1.text, c2.text, properties(c1) AS chunk1_props, properties(c2) AS chunk2_props
 ORDER BY c1.chunk_index
 ```
 
@@ -49,15 +50,21 @@ ORDER BY c1.chunk_index
 ```
 MATCH (d:Document)-[:HAS_CHUNK]->(c:Chunk)
 WHERE c.text CONTAINS "search term"
-RETURN d.title, c.text, c.source_path
+RETURN d.title, c.text, c.source_path, properties(c) AS chunk_properties
 ```
 
 4. To find document with specific title:
 ```
 MATCH (d:Document {title:"Degaga_Wolde_CV.pdf"})-[:HAS_CHUNK]->(c:Chunk)
 WHERE c.text CONTAINS "search term"
-RETURN d.title, c.text, c.source_path
+RETURN d.title, c.text, c.source_path, properties(c) AS chunk_properties
 ```
+
+PROPERTY SAFETY:
+- Core properties (always safe): title, text, source_path, chunk_index, document_id
+- Optional properties: Use properties(node) to access safely
+- Never assume optional properties exist on every node
+- Use COALESCE() for fallback values: COALESCE(node.optional_prop, "default_value")
 
 Schema Information:
 {schema}
@@ -111,13 +118,14 @@ class CypherQueryTool:
 
             # Initialize the chain
             self._qa_chain = GraphCypherQAChain.from_llm(
-                llm,
+                llm=llm,
                 graph=graph,
                 cypher_prompt=cypher_prompt,
                 qa_prompt=qa_prompt,
                 validate_cypher=True,
+                return_intermediate_steps=True,
+                allow_dangerous_requests=False,
                 verbose=False,
-                allow_dangerous_requests=True
             )
 
             logger.info("Cypher QA chain initialized successfully")
@@ -151,16 +159,26 @@ class CypherQueryTool:
             raise GraphException(f"Cypher query failed: {error_msg}")
 
     def execute_cypher(self, cypher_query: str) -> List[Dict[str, Any]]:
-        """Execute raw Cypher query."""
+        """Execute raw Cypher query with property safety checks."""
         try:
             graph = get_graph()
             logger.debug(f"Executing Cypher: {cypher_query}")
+            
+            # Execute query - may trigger Neo4j warnings for non-existent properties
+            # These are non-fatal and handled gracefully
             result = graph.query(cypher_query)
             return result
 
         except Exception as e:
-            logger.error(f"Cypher execution failed: {str(e)}")
-            raise GraphException(f"Cypher execution failed: {str(e)}")
+            error_str = str(e)
+            
+            # Check for common property-related errors
+            if "does not exist" in error_str.lower():
+                logger.warning(f"Query referenced non-existent property: {error_str}")
+                return []
+            
+            logger.error(f"Cypher execution failed: {error_str}")
+            raise GraphException(f"Cypher execution failed: {error_str}")
 
 
 def get_cypher_tool() -> CypherQueryTool:

@@ -9,6 +9,26 @@ from typing import Dict, Any
 from datetime import datetime
 
 
+class DeprecationFilter(logging.Filter):
+    """Filter to suppress specific deprecation warnings from dependencies."""
+    
+    def filter(self, record: logging.LogRecord) -> bool:
+        """
+        Suppress known deprecation warnings that are not actionable.
+        
+        - db.index.vector.queryNodes: LangChain limitation (awaiting update)
+        - elementId deprecation notices: Using modern Neo4j API
+        """
+        if record.levelname == "WARNING" and "neo4j.notifications" in record.name:
+            # Suppress queryNodes deprecation (LangChain's responsibility to update)
+            if "db.index.vector.queryNodes is deprecated" in record.getMessage():
+                return False
+            # Suppress other known Neo4j deprecation notices that aren't actionable
+            if "DEPRECATION" in record.getMessage() and "replaced by" in record.getMessage():
+                return False
+        return True
+
+
 def setup_logging(log_level: str = "INFO", log_format: str = "standard") -> None:
     """Configure logging for the application."""
 
@@ -40,12 +60,18 @@ def setup_logging(log_level: str = "INFO", log_format: str = "standard") -> None
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
         },
+        "filters": {
+            "deprecation_filter": {
+                "()": DeprecationFilter,
+            },
+        },
         "handlers": {
             "console": {
                 "level": log_level,
                 "class": "logging.StreamHandler",
                 "formatter": "standard",
                 "stream": "ext://sys.stdout",
+                "filters": ["deprecation_filter"],
             },
             "file": {
                 "level": log_level,
@@ -54,6 +80,7 @@ def setup_logging(log_level: str = "INFO", log_format: str = "standard") -> None
                 "filename": logs_dir / "chatbot.log",
                 "maxBytes": 10485760,  # 10MB
                 "backupCount": 5,
+                "filters": ["deprecation_filter"],
             },
             "error_file": {
                 "level": "ERROR",
@@ -62,6 +89,7 @@ def setup_logging(log_level: str = "INFO", log_format: str = "standard") -> None
                 "filename": logs_dir / "error.log",
                 "maxBytes": 10485760,  # 10MB
                 "backupCount": 5,
+                "filters": ["deprecation_filter"],
             },
         },
         "loggers": {
@@ -79,6 +107,12 @@ def setup_logging(log_level: str = "INFO", log_format: str = "standard") -> None
                 "level": log_level,
                 "handlers": ["console", "file"],
                 "propagate": False,
+            },
+            "neo4j.notifications": {
+                "level": "WARNING",
+                "handlers": ["console", "file"],
+                "propagate": False,
+                "filters": ["deprecation_filter"],
             },
         },
         "root": {

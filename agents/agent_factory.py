@@ -9,7 +9,7 @@ import yaml
 
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.tools import Tool
+from langchain_core.tools import Tool, StructuredTool
 
 from core.logger import get_logger
 from core.exceptions import AgentException
@@ -158,7 +158,7 @@ class AgentFactory:
         self,
         tool_configs: List[Dict[str, str]]
     ) -> List[Tool]:
-        """Build tools from configuration."""
+        """Build tools from configuration using StructuredTool for multi-parameter functions."""
 
         tools = []
 
@@ -200,11 +200,27 @@ class AgentFactory:
 
             tool_name = tool_config.get("name") or tool_type
             tool_description = tool_config.get("description") or f"{tool_type} tool"
-            tool = Tool.from_function(
-                name=tool_name,
-                description=tool_description,
-                func=tool_functions[tool_type],
-            )
+            func = tool_functions[tool_type]
+            
+            # Use StructuredTool for functions to properly handle multiple parameters
+            # This allows LangChain to understand the function signature and call it correctly
+            try:
+                tool = StructuredTool.from_function(
+                    func=func,
+                    name=tool_name,
+                    description=tool_description,
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to create StructuredTool for '{tool_name}': {e}, "
+                    f"falling back to Tool.from_function"
+                )
+                # Fallback to Tool.from_function if StructuredTool creation fails
+                tool = Tool.from_function(
+                    name=tool_name,
+                    description=tool_description,
+                    func=func,
+                )
 
             tools.append(tool)
 

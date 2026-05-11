@@ -1,155 +1,513 @@
-# IranGoreBackend
+# IranGore AI Backend - Graph RAG + Agentic AI
 
-Unified chatbot backend using Graph RAG + Agentic AI, with a YAML-driven multi-agent system, planning/validation workflow, and Docker-ready deployment.
+Production-ready chatbot backend combining Graph Retrieval Augmented Generation (RAG) with LangGraph-powered agentic AI. Features intelligent planning, validation, and retry logic for robust question-answering.
 
-## At a Glance
+## ✨ Key Features
 
-- FastAPI backend for chat + session APIs
-- Graph RAG with Neo4j + semantic/vector search
-- Multi-agent architecture (`chat`, `vector`, `cypher`, `full`, `scoped`)
-- Centralized agent/tool config in `agents/agents.yaml`
-- Planning → Execute → Validate → Retry response flow
-- Local + Docker deployment paths
+### 🧠 Intelligent Agent System
+- **5 Agent Types**: chat, vector, cypher, full, scoped (each with different strengths)
+- **Planning Phase**: Agents understand questions and plan tool usage before acting
+- **Validation Phase**: Answers verified for relevance and document sourcing
+- **Automatic Retry**: Failed validations trigger retries with different strategies
+- **LangGraph Powered**: Modern, production-ready framework with built-in persistence
 
-## Core Features
+### 📊 Graph RAG Architecture
+- Neo4j knowledge graphs for structured document retrieval
+- Semantic/vector search for content discovery
+- Cypher queries for relationship analysis
+- Multi-layer retrieval combining structured and semantic approaches
 
-- Agentic AI via ReAct-style tool orchestration
-- Graph + vector retrieval for grounded responses
-- Structured configuration with environment-driven settings
-- Session-aware conversations and memory handling
-- Production-oriented logging, health checks, and error handling
+### 🚀 API & Session Management
+- FastAPI with async support
+- Session-based conversation history via Neo4j
+- RESTful endpoints for chat, agents, sessions
+- Interactive API docs at `/docs`
 
-## Project Structure
+### ⚙️ Flexible Configuration
+- YAML-driven agent configuration (`agents/agents.yaml`)
+- Environment-based settings for multi-deployment scenarios
+- Support for Ollama (local) and OpenAI LLMs
+- Configurable tool chains per agent
 
-- `main.py`: FastAPI app and endpoints
-- `config.py`: settings management
-- `schemas.py`: request/response models
-- `core/`: logging and exceptions
-- `agents/`: agent factory, YAML config, agent docs
-- `tools/`: document/vector/cypher/ingestion tools
-- `graph/`: Neo4j integration
-- `llms/`: LLM provider integration
-- `sessions/`: session lifecycle and history
-- `deployment/`, `Dockerfile`, `docker-compose.yml`: deployment assets
+---
 
-## Agent System Summary
+## 🚀 Quick Start (30 seconds)
 
-The unified agent system is built around:
-
-- `agents/agents.yaml`: source of truth for agents, tools, settings
-- `agents/agent_factory.py`: loads config, builds/caches agents, binds tools
-
-### Available Agents
-
-- `chat`: lightweight chat/doc interaction
-- `vector`: semantic search focused
-- `cypher`: graph + vector + chat (recommended default)
-- `full`: all tools enabled for complex workflows
-- `scoped`: domain-specific constrained behavior
-
-### Planning and Validation Flow
-
-Each response follows:
-
-1. Plan what the question needs and which tools to use
-2. Execute tool calls strategically
-3. Validate relevance, grounding, and completeness
-4. Retry with alternate strategy if validation fails
-
-This is documented across the planning docs and reflected in the agent prompts/config.
-
-## Quick Start
-
-### Option 1: Local development
-
+### Local Development
 ```bash
+# Setup environment
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+
+# Configure
 cp .env.example .env
-python setup_guide.py
+# Edit .env with your Neo4j, Ollama/OpenAI credentials
+
+# Run
 fastapi dev main.py
 ```
 
-### Option 2: Docker Compose
-
+### Docker
 ```bash
 cp .env.example .env
+# Edit .env
 docker-compose up -d
 ```
 
-## Basic Verification
-
+### Verify Installation
 ```bash
+# Check health
 curl http://localhost:8000/health
+
+# List agents
 curl http://localhost:8000/agents
+
+# Chat with cypher agent
 curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"message":"Hello","agent_name":"cypher"}'
+  -d '{"message": "What are the main topics?", "agent_name": "cypher"}'
 ```
 
-## API Endpoints (Main)
+---
 
-- `POST /chat`
-- `POST /sessions`
-- `GET /sessions`
-- `GET /sessions/{id}`
-- `DELETE /sessions/{id}`
-- `GET /agents`
-- `GET /health`
-- `GET /docs` and `GET /redoc`
+## 📚 Core Concepts
 
-## Configuration Essentials
+### The Five Agents
 
-Set these in `.env`:
+| Agent | Iterations | Best For | Speed |
+|-------|-----------|----------|-------|
+| **chat** | 12 | Simple Q&A | ⚡ Fast |
+| **vector** | 14 | Content search | ⚡⚡ Medium |
+| **cypher** | 16 | Complex queries | ⚡⚡ Medium ⭐ |
+| **full** | 18 | Maximum analysis | 🔥 Slower |
+| **scoped** | 12 | Domain-specific | ⚡ Fast |
 
-- `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`
-- `LLM_PROVIDER` (e.g., `ollama` or `openai`)
-- `LLM_MODEL`, `LLM_TEMPERATURE`
-- `OLLAMA_BASE_URL` (if using Ollama)
-- `OPENAI_API_KEY` (if using OpenAI)
-- `SESSION_TIMEOUT`, `MAX_HISTORY_LENGTH`
+**Default & Recommended**: `cypher` - best balance of capability and speed.
 
-## Consolidated Documentation Map
+### Planning → Execute → Validate → Retry
 
-This README summarizes the following docs and text guides:
+```
+User Question
+    ↓
+[PLANNING] Agent analyzes question and plans tool usage
+    ↓
+[EXECUTING] Agent uses tools strategically
+    ├─ Semantic search (find content)
+    ├─ Graph queries (find relationships)
+    └─ Document chat (context)
+    ↓
+[VALIDATING] Agent checks:
+    ✓ Is answer relevant to question?
+    ✓ Are sources from documents?
+    ✓ Is answer complete?
+    ↓
+    NO → Retry with different tools/strategy
+    YES → Final Answer (with sources)
+```
 
-### General backend/refactor docs
+### Tool Types
 
-- `START_HERE.txt`: onboarding and run flow
-- `COMPLETION_REPORT.md`: high-level completion summary
-- `REFACTORING_SUMMARY.md`: architecture/code changes
-- `QUICKSTART.md`: setup/deployment options
+- **semantic_search**: Vector-based content discovery
+- **graph_qa**: Cypher queries for relationships
+- **document_chat**: LLM-based document interaction
 
-### Unified agent architecture docs
+---
 
-- `UNIFIED_STRUCTURE.md`: architecture overview
-- `IMPLEMENTATION_SUMMARY.md`: implementation recap
-- `AGENTS_GUIDE.md`: usage/customization guide
-- `QUICK_REFERENCE.md`: fast commands and patterns
-- `STRUCTURE_DIAGRAM.txt`: visual architecture
-- `FILES_MANIFEST.txt`: file inventory
+## 🏗️ Architecture & File Layout
 
-### Planning/validation and migration docs
+```
+IranGoreBackend/
+├── main.py                    # FastAPI application
+├── config.py                  # Settings management
+├── schemas.py                 # Pydantic models
+│
+├── agents/
+│   ├── agents.yaml           # Agent configuration (source of truth)
+│   ├── agent_factory.py      # Factory with LangGraph integration
+│   └── __init__.py          # Exports
+│
+├── tools/
+│   ├── vector_tool.py       # Semantic search
+│   ├── cypher_tool.py       # Graph queries
+│   ├── document_graph_tool.py # Document ingestion
+│   └── __init__.py
+│
+├── graph/
+│   ├── connection.py         # Neo4j connection
+│   ├── manager.py           # Graph operations
+│   └── __init__.py
+│
+├── llms/
+│   ├── manager.py           # LLM provider initialization
+│   ├── ollama.py            # Ollama integration
+│   └── __init__.py
+│
+├── sessions/
+│   ├── manager.py           # Session lifecycle
+│   └── __init__.py
+│
+├── core/
+│   ├── logger.py            # Logging setup
+│   ├── exceptions.py        # Custom exceptions
+│   └── __init__.py
+│
+├── requirements.txt         # Python dependencies
+├── .env.example            # Configuration template
+├── Dockerfile              # Docker image
+├── docker-compose.yml      # Multi-container setup
+└── deployment/             # Deployment assets
+```
 
-- `PLANNING_AND_VALIDATION.md`: planning/validation model
-- `AGENT_QUICKSTART.md`: quick practical usage
-- `COMPLETE_AGENT_GUIDE.md`: full functional guide
-- `AGENT_PLANNING_IMPLEMENTATION.md`: implementation details
-- `AGENT_IMPLEMENTATION_CHECKLIST.md`: verification checklist
-- `AGENT_PLANNING_COMPLETE.md`: completion summary
-- `AGENT_FILES_MANIFEST.md`: planning-related file manifest
-- `AGENT_DOCUMENTATION_INDEX.md`: documentation index
-- `LANGGRAPH_MIGRATION.md`: LangChain → LangGraph migration notes
+---
 
-## Troubleshooting (Common)
+## 🔧 Configuration
 
-- Neo4j failures: verify URI/credentials and that Neo4j is running
-- LLM failures: verify provider config, key, or Ollama server
-- Port conflicts: run on another port (e.g., `--port 8001`)
-- Import/module issues: ensure `.venv` is active and deps are installed
+### Environment Variables (`.env`)
 
-## Notes
+**Neo4j Database**:
+```env
+NEO4J_URI=neo4j://localhost:7687
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=your_password
+NEO4J_DATABASE=neo4j
+```
 
-- This repository contains extensive historical and implementation docs.
-- This `README.md` is intended as the single entry point summarizing all `.md` and `.txt` guides currently in the project.
+**LLM Provider** (choose one):
+```env
+# For Ollama (local)
+LLM_PROVIDER=ollama
+LLM_MODEL=qwen3:8b
+OLLAMA_BASE_URL=http://localhost:11434
+
+# OR for OpenAI
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-4
+OPENAI_API_KEY=sk-xxx
+```
+
+**Agent Settings**:
+```env
+SESSION_TIMEOUT=3600
+MAX_HISTORY_LENGTH=50
+```
+
+### Agent Configuration (`agents/agents.yaml`)
+
+Customize agents directly in YAML:
+
+```yaml
+settings:
+  default_agent: "cypher"
+  max_iterations: 15
+  verbose_default: true
+
+agents:
+  cypher:
+    name: "Cypher Agent"
+    max_iterations: 16
+    system_prompt: |
+      You are an expert research assistant...
+    tools:
+      - name: "Document Chat"
+        type: "document_chat"
+      - name: "Vector Search"
+        type: "vector_search"
+      - name: "Graph Query"
+        type: "cypher_qa"
+```
+
+---
+
+## 📡 API Endpoints
+
+### Chat & Agents
+
+**POST /chat** - Send message to agent
+```json
+{
+  "message": "Your question",
+  "agent_name": "cypher",  // optional, defaults to cypher
+  "session_id": null,      // optional, creates new if null
+  "include_sources": true  // optional
+}
+```
+
+**GET /agents** - List available agents and capabilities
+
+### Session Management
+
+**POST /sessions** - Create new session
+**GET /sessions** - List all sessions
+**GET /sessions/{session_id}** - Get session info
+**DELETE /sessions/{session_id}** - Delete session
+**GET /history/{session_id}** - Get chat history
+
+### System
+
+**GET /health** - Health check
+**GET /docs** - Interactive API documentation
+**GET /redoc** - Alternative API docs
+
+---
+
+## 🛠️ Development & Customization
+
+### Create Custom Agent
+
+Edit `agents/agents.yaml`:
+
+```yaml
+agents:
+  my_custom_agent:
+    name: "My Custom Agent"
+    description: "Specialized for my domain"
+    type: "react"
+    enabled: true
+    max_iterations: 16
+    system_prompt: |
+      You are a specialized agent for...
+    tools:
+      - name: "Tool 1"
+        description: "Does X"
+        type: "document_chat"
+      - name: "Tool 2"
+        description: "Does Y"
+        type: "vector_search"
+```
+
+### Modify Agent Behavior
+
+Edit system_prompt in `agents/agents.yaml` for each agent to change:
+- Reasoning style
+- Tool preference
+- Response format
+- Domain constraints
+
+### Add Custom Tool
+
+In `agents/agent_factory.py`, extend `_build_tools()`:
+
+```python
+tool_functions = {
+    "document_chat": existing_func,
+    "vector_search": existing_func,
+    "cypher_qa": existing_func,
+    "my_custom_tool": my_custom_function,  # Add here
+}
+```
+
+---
+
+## 🚨 Troubleshooting
+
+### Neo4j Connection Error
+```
+Error: Failed to connect to Neo4j
+```
+**Fix**: 
+- Verify Neo4j is running: `docker ps | grep neo4j`
+- Check credentials in `.env`
+- Verify URI format: `neo4j://hostname:7687`
+
+### LLM Not Responding
+```
+Error: Ollama is not reachable
+```
+**Fix**:
+- Start Ollama: `ollama serve`
+- Verify in `.env`: `OLLAMA_BASE_URL=http://localhost:11434`
+- Test: `curl http://localhost:11434/api/tags`
+
+### "Max iterations reached"
+**Fix**:
+- Question too complex → break into steps
+- Use `full` agent (18 iterations vs 16)
+- Check if documents contain relevant info
+
+### Missing Property Warning
+```
+property `document_title` does not exist in database
+```
+**Fix**:
+- This is non-critical (graceful degradation)
+- Vector search still works, just missing that field
+- Update document ingestion if you want that property
+
+### Port Already in Use
+```bash
+# Use different port
+fastapi dev main.py --port 8001
+# Or in docker-compose.yml, change ports
+```
+
+---
+
+## 🧪 Testing
+
+### Run Agent Tests
+```bash
+python test_planning_validation.py --all-agents
+```
+
+### Test Specific Agent
+```bash
+python test_planning_validation.py --agent cypher --question "Your test question"
+```
+
+### Manual API Test
+```bash
+# List agents
+curl http://localhost:8000/agents | jq
+
+# Test chat
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What documents are available?",
+    "agent_name": "vector",
+    "include_sources": true
+  }' | jq
+```
+
+---
+
+## 📊 Performance & Optimization
+
+### Agent Selection by Use Case
+
+```
+Simple questions (FAQ)          → chat agent (fastest)
+Content discovery              → vector agent  
+Complex analysis/relationships → cypher agent (recommended)
+Maximum reasoning               → full agent
+Domain-specific Q&A            → scoped agent
+```
+
+### Performance Tips
+
+1. **Reuse sessions** for related questions (preserves context)
+2. **Use cypher agent** for best balance of speed & quality
+3. **Monitor iterations** - if hitting max, try simpler question
+4. **Cache agents** - factory caches created agents
+5. **Batch operations** - process multiple questions per session
+
+---
+
+## 🚀 Deployment
+
+### Docker Compose (Recommended)
+```bash
+docker-compose up -d
+# Includes: Backend, Neo4j, Ollama (optional)
+```
+
+### Kubernetes / Cloud
+1. Build image: `docker build -t irangore-backend .`
+2. Push to registry: `docker push your-registry/irangore-backend`
+3. Deploy manifest with Neo4j external DB reference
+
+### Production Checklist
+- [ ] Set strong Neo4j password
+- [ ] Use external LLM API or dedicated Ollama server
+- [ ] Enable HTTPS/TLS for API
+- [ ] Configure logging to file/ELK
+- [ ] Set resource limits in docker-compose/k8s
+- [ ] Monitor Neo4j query performance
+- [ ] Regular backups of Neo4j data
+- [ ] Rate limiting on API endpoints
+
+---
+
+## 🔬 Technology Stack
+
+- **Framework**: FastAPI (async Python web)
+- **Agent Framework**: LangGraph (modern ReAct agents)
+- **Graph Database**: Neo4j (knowledge graphs)
+- **Vector Store**: Neo4j Vector Index
+- **LLMs**: Ollama (local) or OpenAI (cloud)
+- **Message Protocol**: LangChain message types
+- **Persistence**: Neo4j + file-based sessions
+- **Containerization**: Docker + Docker Compose
+
+---
+
+## 📖 Additional Resources
+
+### Key Implementation Files
+- `agents/agents.yaml` - Full agent & tool configuration
+- `agents/agent_factory.py` - Agent creation & planning logic
+- `main.py` - FastAPI endpoints and request handling
+- `tools/cypher_tool.py` - Graph query implementation
+- `tools/vector_tool.py` - Vector search implementation
+
+### Understanding Planning & Validation
+The planning/validation system is implemented in:
+1. Agent prompts in `agents/agents.yaml` (system_prompt fields)
+2. ReAct loop in LangGraph (automatic planning/thinking)
+3. Response validation via agent's Final Answer checks
+
+### Database Schema
+Documents stored as nodes with properties:
+- `text`: Chunk content
+- `document_id`: Document identifier
+- `source_path`: File path/URL
+- `chunk_index`: Position in document
+- `page_number`, `line_number`: Location metadata
+
+Embeddings stored in Neo4j Vector Index for semantic search.
+
+---
+
+## 🆘 Support & Debugging
+
+### Enable Verbose Logging
+```python
+# In agents/agents.yaml
+agents:
+  cypher:
+    verbose: true  # Shows all planning/validation steps
+```
+
+### Check Agent Configuration
+```bash
+python -c "
+from agents import get_agent_factory
+factory = get_agent_factory()
+for agent in factory.get_enabled_agents():
+    config = factory.get_agent(agent)
+    print(f'{agent}: {config[\"max_iterations\"]} iterations')
+"
+```
+
+### View API Documentation
+Visit: `http://localhost:8000/docs` (Swagger UI)
+
+---
+
+## 📝 Release Notes
+
+**Latest (LangGraph Migration)**
+- ✅ Migrated from deprecated LangChain to LangGraph
+- ✅ Built-in persistence (no manual memory management)
+- ✅ Improved session/thread handling
+- ✅ No deprecation warnings
+- ✅ All planning/validation features preserved
+
+**Previous Features**
+- ✅ Planning phase implementation
+- ✅ Validation phase with automatic retry
+- ✅ 5-agent unified architecture
+- ✅ YAML-based configuration
+- ✅ Multi-tool orchestration
+
+---
+
+## 📄 License
+
+[Specify your license here]
+
+---
+
+**Last Updated**: May 2026  
+**Status**: ✅ Production Ready
