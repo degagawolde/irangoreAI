@@ -26,6 +26,32 @@ INSTRUCTIONS:
 6. Do NOT return embedding properties in results
 7. Always start your response with either a valid Cypher query starting with MATCH/RETURN, or with "UNABLE_TO_ANSWER:"
 
+
+Example Cypher Statements:
+
+1. To find chunks from specific documents:
+```
+MATCH (d:Document)-[:HAS_CHUNK]->(c:Chunk)
+WHERE d.title CONTAINS "search term"
+RETURN d.title, c.text, c.chunk_index
+ORDER BY c.chunk_index
+```
+
+2. To find related chunks by sequence:
+```
+MATCH (c1:Chunk)-[:NEXT_CHUNK]->(c2:Chunk)
+WHERE c1.document_id = "doc_id"
+RETURN c1.text, c2.text
+ORDER BY c1.chunk_index
+```
+
+3. To find chunks with specific content:
+```
+MATCH (d:Document)-[:HAS_CHUNK]->(c:Chunk)
+WHERE c.text CONTAINS "search term"
+RETURN d.title, c.text, c.source_path
+```
+
 Schema Information:
 {schema}
 

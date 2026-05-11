@@ -160,20 +160,20 @@ agents:
 tools:
   document_chat:
     type: "function"
-    module: "llm"
-    function: "create_chat_chain"
+    module: "llms"
+    function: "get_llm"
     description: "General conversation chain"
     
   vector_search:
     type: "function"
-    module: "tools.vector"
-    function: "get_document_context"
+    module: "tools.vector_tool"
+    function: "semantic_search"
     description: "Vector-based semantic search"
     
   cypher_qa:
     type: "function"
-    module: "tools.cypher"
-    function: "cypher_qa"
+    module: "tools.cypher_tool"
+    function: "graph_qa"
     description: "Cypher-based graph queries"
     
   document_ingestion:
@@ -184,6 +184,10 @@ tools:
 
 # Global agent settings
 settings:
+  system_prompt_preamble: |
+    You are a tool-using assistant for document-grounded question answering.
+    Use available tools deliberately and only provide answers supported by retrieved content.
+    If information is missing, say so clearly and suggest what to retrieve next.
   default_agent: "cypher"  # Use cypher for best results
   timeout: 300  # seconds
   max_iterations: 15  # Increased for planning and validation cycles

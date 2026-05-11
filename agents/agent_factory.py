@@ -1,13 +1,13 @@
 """Unified agent factory for loading agents from YAML configuration."""
 
-from typing import Dict, Any, Optional, List
+from importlib import import_module
+from typing import Dict, Any, Optional, List, Callable
 from pathlib import Path
 from uuid import uuid4
 
 import yaml
 
-from langgraph.prebuilt import create_react_agent
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.tools import Tool
 
@@ -18,12 +18,29 @@ from llms import get_llm
 logger = get_logger(__name__)
 
 
+def _build_react_agent(llm, tools, prompt: PromptTemplate):
+    """Create a ReAct agent using the best available backend.
+
+    Prefer `langchain.agents.create_agent` (new API), and fall back to
+    `langgraph.prebuilt.create_react_agent` for compatibility.
+    """
+    try:
+        from langchain.agents import create_agent
+
+        return create_agent(model=llm, tools=tools, system_prompt=prompt.template)
+    except Exception:
+        from langgraph.prebuilt import create_react_agent
+
+        return create_react_agent(llm, tools, prompt=prompt)
+
+
 class AgentFactory:
     """Factory for creating unified LangGraph agent instances from YAML configuration."""
 
     _instance = None
     _config: Dict[str, Any] = {}
     _agents_cache: Dict[str, Any] = {}
+    _config_path = Path(__file__).parent / "agents.yaml"
 
     def __new__(cls):
         """Singleton pattern."""
@@ -35,17 +52,18 @@ class AgentFactory:
     def _load_config(self) -> None:
         """Load agent configuration from YAML file."""
         try:
-            config_path = Path(__file__).parent / "agents.yaml"
-
-            if not config_path.exists():
+            if not self._config_path.exists():
                 raise AgentException(
-                    f"Agent configuration file not found: {config_path}"
+                    f"Agent configuration file not found: {self._config_path}"
                 )
 
-            with open(config_path, "r") as f:
+            with open(self._config_path, "r", encoding="utf-8") as f:
                 self._config = yaml.safe_load(f)
 
-            logger.info(f"Loaded agent configuration from {config_path}")
+            if not isinstance(self._config, dict):
+                raise AgentException("Invalid agents.yaml: root must be a mapping")
+
+            logger.info(f"Loaded agent configuration from {self._config_path}")
 
         except yaml.YAMLError as e:
             raise AgentException(f"Failed to parse agents.yaml: {str(e)}")
@@ -59,11 +77,7 @@ class AgentFactory:
         """Get agent configuration by name."""
 
         if agent_name is None:
-            agent_name = (
-                self._config
-                .get("settings", {})
-                .get("default_agent", "chat")
-            )
+            agent_name = self._config.get("settings", {}).get("default_agent", "chat")
 
         if agent_name not in self._config.get("agents", {}):
             raise AgentException(
@@ -93,62 +107,40 @@ class AgentFactory:
 
     def create_agent(self, agent_name: str = None):
         """Create a fully configured LangGraph ReAct agent."""
-
-        agent_config = self.get_agent(agent_name)
+        resolved_agent_name = (
+            agent_name
+            or self._config.get("settings", {}).get("default_agent", "chat")
+        )
+        agent_config = self.get_agent(resolved_agent_name)
 
         # Return cached instance
-        if agent_name in self._agents_cache:
-            logger.debug(f"Using cached agent: {agent_name}")
-            return self._agents_cache[agent_name]
+        if resolved_agent_name in self._agents_cache:
+            logger.debug(f"Using cached agent: {resolved_agent_name}")
+            return self._agents_cache[resolved_agent_name]
 
         try:
-            logger.info(f"Creating agent: {agent_name}")
+            logger.info(f"Creating agent: {resolved_agent_name}")
 
             llm = get_llm()
 
             # Build tools
-            tools = self._build_tools(
-                agent_config.get("tools", [])
+            tools = self._build_tools(agent_config.get("tools", []))
+
+            settings = self._config.get("settings", {})
+            prompt_preamble = settings.get("system_prompt_preamble", "").strip()
+            system_prompt = agent_config.get("system_prompt", "You are a helpful AI assistant.").strip()
+            full_system_prompt = "\n\n".join(
+                part for part in [prompt_preamble, system_prompt] if part
             )
 
-            # System prompt
-            system_prompt = agent_config.get(
-                "system_prompt",
-                "You are a helpful AI assistant."
-            )
-
-            enhanced_system_prompt = f"""
-{system_prompt}
-
-===== PLANNING PHASE =====
-
-Before answering:
-1. Understand the user's request carefully
-2. Decide which tools are relevant
-3. Gather evidence before answering
-
-===== VALIDATION PHASE =====
-
-Before finalizing:
-1. Ensure the answer is relevant
-2. Ensure supporting evidence exists
-3. Use tools again if information is incomplete
-
-Always provide accurate and grounded responses.
-"""
-
-            # Create LangGraph ReAct agent
-            agent = create_react_agent(
-                model=llm,
-                tools=tools,
-                prompt=enhanced_system_prompt,
-            )
+            prompt = PromptTemplate.from_template(full_system_prompt)
+            agent = _build_react_agent(llm=llm, tools=tools, prompt=prompt)
 
             # Cache
-            self._agents_cache[agent_name] = agent
+            self._agents_cache[resolved_agent_name] = agent
 
             logger.info(
-                f"Agent '{agent_name}' created successfully"
+                f"Agent '{resolved_agent_name}' created successfully"
             )
 
             return agent
@@ -169,10 +161,6 @@ Always provide accurate and grounded responses.
         """Build tools from configuration."""
 
         tools = []
-
-        # Import tool functions
-        from tools.vector_tool import semantic_search
-        from tools.cypher_tool import graph_qa
 
         # Simple document chat tool
         def create_document_chat(input_text: str) -> str:
@@ -197,12 +185,8 @@ Always provide accurate and grounded responses.
                 {"input": input_text}
             )
 
-        # Tool registry
-        tool_functions = {
-            "document_chat": create_document_chat,
-            "vector_search": semantic_search,
-            "cypher_qa": graph_qa,
-        }
+        tool_functions = self._resolve_tool_functions()
+        tool_functions["document_chat"] = create_document_chat
 
         for tool_config in tool_configs:
 
@@ -214,9 +198,11 @@ Always provide accurate and grounded responses.
                 )
                 continue
 
+            tool_name = tool_config.get("name") or tool_type
+            tool_description = tool_config.get("description") or f"{tool_type} tool"
             tool = Tool.from_function(
-                name=tool_config.get("name"),
-                description=tool_config.get("description"),
+                name=tool_name,
+                description=tool_description,
                 func=tool_functions[tool_type],
             )
 
@@ -227,6 +213,26 @@ Always provide accurate and grounded responses.
             )
 
         return tools
+
+    def _resolve_tool_functions(self) -> Dict[str, Callable]:
+        """Resolve configured tool function targets from agents.yaml."""
+        tools_config = self._config.get("tools", {})
+        resolved: Dict[str, Callable] = {}
+
+        for tool_type, cfg in tools_config.items():
+            module_name = cfg.get("module")
+            function_name = cfg.get("function")
+            if not module_name or not function_name:
+                logger.warning(f"Tool '{tool_type}' missing module/function; skipping")
+                continue
+            try:
+                module = import_module(module_name)
+                resolved[tool_type] = getattr(module, function_name)
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to resolve tool '{tool_type}' from {module_name}.{function_name}: {exc}"
+                )
+        return resolved
 
     def generate_response(
         self,
@@ -267,7 +273,7 @@ Always provide accurate and grounded responses.
             logger.debug(f"Raw response: {response}")
 
             # Extract assistant response
-            messages = response.get("messages", [])
+            messages = response.get("messages", []) if isinstance(response, dict) else []
 
             if not messages:
                 return ""
