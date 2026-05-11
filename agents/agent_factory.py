@@ -1,6 +1,7 @@
 """Unified agent factory for loading agents from YAML configuration."""
 
 from importlib import import_module
+import warnings
 from typing import Dict, Any, Optional, List, Callable
 from pathlib import Path
 from uuid import uuid4
@@ -29,6 +30,10 @@ def _build_react_agent(llm, tools, prompt: PromptTemplate):
 
         return create_agent(model=llm, tools=tools, system_prompt=prompt.template)
     except Exception:
+        warnings.filterwarnings(
+            "ignore",
+            message=r"The default value of `allowed_objects` will change in a future version\..*",
+        )
         from langgraph.prebuilt import create_react_agent
 
         return create_react_agent(llm, tools, prompt=prompt)
