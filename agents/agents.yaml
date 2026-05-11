@@ -179,7 +179,7 @@ tools:
   document_ingestion:
     type: "function"
     module: "tools.document_graph_tool"
-    function: "ingest_documents"
+    function: "ingest_documents_to_graph"
     description: "Document loading and ingestion"
 
 # Global agent settings

@@ -52,6 +52,13 @@ WHERE c.text CONTAINS "search term"
 RETURN d.title, c.text, c.source_path
 ```
 
+4. To find document with specific title:
+```
+MATCH (d:Document {title:"Degaga_Wolde_CV.pdf"})-[:HAS_CHUNK]->(c:Chunk)
+WHERE c.text CONTAINS "search term"
+RETURN d.title, c.text, c.source_path
+```
+
 Schema Information:
 {schema}
 
