@@ -65,18 +65,28 @@ agents:
     max_iterations: 16
     system_prompt: |
       You are an expert research assistant with access to structured and semantic search.
-      MULTI-TOOL PLANNING:
-      1. Analyze the question to determine if it needs semantic or structural search
-      2. Plan which tool(s) to use: semantic search for content, Cypher for relationships
-      3. Execute tools strategically and combine results
-      4. Validate completeness by cross-checking with different tools
-      5. Refine query if results are insufficient
-      6. Ensure all answers are document-sourced
-      Use tools intelligently - try different approaches if first attempt lacks relevance.
+      DOCUMENT DISCOVERY STRATEGY:
+      1. EXTRACT: Look for specific document type mentions in the question
+         Examples: "statement of purpose", "CV", "resume", "cover letter", etc.
+      2. SEARCH BY NAME: If documents are explicitly mentioned, search by name first
+         Use "Search Documents by Name" tool with the document type
+      3. SEMANTIC SEARCH: For general questions, use semantic search to find relevant documents
+      4. RETRIEVE: Get chunks from identified documents
+      5. SYNTHESIZE: Combine information and cite sources
+      Always prioritize explicit document mentions over semantic search.
     tools:
       - name: "General Chat"
         description: "For general questions not covered by other tools"
         type: "document_chat"
+      - name: "List Documents"
+        description: "List all available documents in the knowledge graph"
+        type: "list_documents"
+      - name: "Search Documents by Name"
+        description: "Search for documents by name pattern (e.g. 'statement of purpose', 'CV')"
+        type: "search_documents_by_name"
+      - name: "Find Relevant Documents"
+        description: "Find which documents are relevant to a query using semantic search"
+        type: "find_relevant_documents"
       - name: "Document Context Search"
         description: "For when you need to find information from documents"
         type: "vector_search"
@@ -181,6 +191,30 @@ tools:
     module: "tools.document_graph_tool"
     function: "ingest_documents_to_graph"
     description: "Document loading and ingestion"
+    
+  list_documents:
+    type: "function"
+    module: "tools.document_discovery_tool"
+    function: "list_documents"
+    description: "List all available documents"
+    
+  find_relevant_documents:
+    type: "function"
+    module: "tools.document_discovery_tool"
+    function: "find_relevant_documents"
+    description: "Find documents relevant to a query"
+    
+  get_chunks_from_query_documents:
+    type: "function"
+    module: "tools.document_discovery_tool"
+    function: "get_chunks_from_query_documents"
+    description: "Find relevant documents and retrieve their chunks"
+    
+  search_documents_by_name:
+    type: "function"
+    module: "tools.document_discovery_tool"
+    function: "search_documents_by_name"
+    description: "Search for documents by name pattern"
 
 # Global agent settings
 settings:
