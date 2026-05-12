@@ -14,6 +14,7 @@ Production-ready chatbot backend combining Graph Retrieval Augmented Generation 
 ### 📊 Graph RAG Architecture
 - Neo4j knowledge graphs for structured document retrieval
 - Semantic/vector search for content discovery
+- **Smart Document Discovery** - finds relevant documents by name or content
 - Cypher queries for relationship analysis
 - Multi-layer retrieval combining structured and semantic approaches
 
@@ -111,6 +112,31 @@ User Question
 - **semantic_search**: Vector-based content discovery
 - **graph_qa**: Cypher queries for relationships
 - **document_chat**: LLM-based document interaction
+- **list_documents**: List all available documents
+- **search_documents_by_name**: Find documents by name/type (e.g., "statement of purpose", "CV")
+- **find_relevant_documents**: Find documents relevant to a query using semantic similarity
+- **get_chunks_from_query_documents**: Integrated workflow - find relevant docs then retrieve chunks
+
+### Smart Document Discovery
+
+The **cypher agent** uses intelligent document discovery:
+
+1. **Extract** document type hints from questions (e.g., "statement of purpose")
+2. **Search by name** if explicit document mentions are found
+3. **Fall back to semantic search** for general queries
+4. **Retrieve chunks** from identified documents
+5. **Synthesize answers** with source citations
+
+**Example**:
+```
+Query: "also look at the statement of purpose documents and identify what he is applying for?"
+
+Agent workflow:
+1. Extracts: "statement of purpose"
+2. Searches by name → finds matching document
+3. Retrieves chunks from that document
+4. Answers: "Based on the statement of purpose, they are applying for..."
+```
 
 ---
 
@@ -128,9 +154,10 @@ IranGoreBackend/
 │   └── __init__.py          # Exports
 │
 ├── tools/
-│   ├── vector_tool.py       # Semantic search
-│   ├── cypher_tool.py       # Graph queries
-│   ├── document_graph_tool.py # Document ingestion
+│   ├── vector_tool.py           # Semantic vector search
+│   ├── cypher_tool.py           # Graph queries
+│   ├── document_graph_tool.py   # Document ingestion
+│   ├── document_discovery_tool.py # Smart document finding
 │   └── __init__.py
 │
 ├── graph/
