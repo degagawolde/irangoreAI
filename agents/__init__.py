@@ -9,6 +9,7 @@ from .agent_factory import (
     get_enabled_agents,
     AgentFactory,
 )
+from .orchestrator import route_agent
 
 __all__ = [
     # Unified factory
@@ -18,4 +19,5 @@ __all__ = [
     "list_agents",
     "get_enabled_agents",
     "AgentFactory",
+    "route_agent",
 ]

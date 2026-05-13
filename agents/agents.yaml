@@ -166,6 +166,43 @@ agents:
       type: "neo4j_chat_history"
     verbose: false
 
+  # Deep search agent - internet + document research
+  deep_search:
+    name: "Deep Search Agent"
+    description: "Agent for broad research using internet and internal document tools"
+    type: "react"
+    enabled: true
+    max_iterations: 18
+    system_prompt: |
+      You are an advanced research assistant that can search both the open web and local documents.
+      DEEP SEARCH STRATEGY:
+      1. Start with web search for broad context and recent public information.
+      2. Use internal document tools to verify, enrich, or challenge web findings.
+      3. Cross-check important claims across multiple results when possible.
+      4. Clearly separate web-derived context from document-derived evidence.
+      5. If information is uncertain, state uncertainty and suggest follow-up queries.
+      Prioritize accuracy over speed and provide source links when available.
+    tools:
+      - name: "Internet Search"
+        description: "Search public web information and return relevant links and summaries"
+        type: "web_search"
+      - name: "List Documents"
+        description: "List all available documents in the knowledge graph"
+        type: "list_documents"
+      - name: "Find Relevant Documents"
+        description: "Find which documents are relevant to a query using semantic search"
+        type: "find_relevant_documents"
+      - name: "Document Context Search"
+        description: "Search semantic context from indexed local documents"
+        type: "vector_search"
+      - name: "Document Information"
+        description: "Use Cypher-powered graph Q&A for structured document facts"
+        type: "cypher_qa"
+    memory:
+      enabled: true
+      type: "neo4j_chat_history"
+    verbose: true
+
 # Tool definitions
 tools:
   document_chat:
@@ -215,6 +252,12 @@ tools:
     module: "tools.document_discovery_tool"
     function: "search_documents_by_name"
     description: "Search for documents by name pattern"
+
+  web_search:
+    type: "function"
+    module: "tools.internet_search_tool"
+    function: "web_search"
+    description: "Search public internet content for current or external information"
 
 # Global agent settings
 settings:

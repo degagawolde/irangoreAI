@@ -5,7 +5,7 @@ Production-ready chatbot backend combining Graph Retrieval Augmented Generation 
 ## ✨ Key Features
 
 ### 🧠 Intelligent Agent System
-- **5 Agent Types**: chat, vector, cypher, full, scoped (each with different strengths)
+- **6 Agent Types**: chat, vector, cypher, full, scoped, deep_search (each with different strengths)
 - **Planning Phase**: Agents understand questions and plan tool usage before acting
 - **Validation Phase**: Answers verified for relevance and document sourcing
 - **Automatic Retry**: Failed validations trigger retries with different strategies
@@ -64,17 +64,17 @@ curl http://localhost:8000/health
 # List agents
 curl http://localhost:8000/agents
 
-# Chat with cypher agent
+# Chat with automatic orchestration
 curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "What are the main topics?", "agent_name": "cypher"}'
+  -d '{"message": "What are the main topics?", "agent_name": "auto"}'
 ```
 
 ---
 
 ## 📚 Core Concepts
 
-### The Five Agents
+### The Six Agents
 
 | Agent | Iterations | Best For | Speed |
 |-------|-----------|----------|-------|
@@ -83,8 +83,9 @@ curl -X POST http://localhost:8000/chat \
 | **cypher** | 16 | Complex queries | ⚡⚡ Medium ⭐ |
 | **full** | 18 | Maximum analysis | 🔥 Slower |
 | **scoped** | 12 | Domain-specific | ⚡ Fast |
+| **deep_search** | 18 | Internet + internal document research | 🔥 Slower |
 
-**Default & Recommended**: `cypher` - best balance of capability and speed.
+**Default**: `auto` - orchestration routes the query to the best agent.
 
 ### Planning → Execute → Validate → Retry
 
@@ -116,6 +117,7 @@ User Question
 - **search_documents_by_name**: Find documents by name/type (e.g., "statement of purpose", "CV")
 - **find_relevant_documents**: Find documents relevant to a query using semantic similarity
 - **get_chunks_from_query_documents**: Integrated workflow - find relevant docs then retrieve chunks
+- **web_search**: Public internet search for broader or recent context
 
 ### Smart Document Discovery
 
@@ -254,7 +256,7 @@ agents:
 ```json
 {
   "message": "Your question",
-  "agent_name": "cypher",  // optional, defaults to cypher
+  "agent_name": "auto",    // optional, defaults to auto (orchestrator routing)
   "session_id": null,      // optional, creates new if null
   "include_sources": true  // optional
 }

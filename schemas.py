@@ -26,7 +26,7 @@ class ChatRequest(BaseModel):
         default=False, description="Include source documents in response"
     )
     agent_name: Optional[str] = Field(
-        default="cypher", description="Agent to use: chat, vector, cypher, full, or scoped"
+        default="auto", description="Agent to use: auto/orchestrator, chat, vector, cypher, full, scoped, or deep_search"
     )
 
 

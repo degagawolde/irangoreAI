@@ -112,10 +112,9 @@ class AgentFactory:
 
     def create_agent(self, agent_name: str = None):
         """Create a fully configured LangGraph ReAct agent."""
-        resolved_agent_name = (
-            agent_name
-            or self._config.get("settings", {}).get("default_agent", "chat")
-        )
+        resolved_agent_name = ( 
+            agent_name or self._config.get("settings", {}).get("default_agent", "chat")
+            )
         agent_config = self.get_agent(resolved_agent_name)
 
         # Return cached instance

@@ -8,6 +8,7 @@ from .document_graph_tool import (
     ingest_documents_to_graph,
     ingest_documents_tool,
 )
+from .internet_search_tool import web_search
 
 __all__ = [
     "get_cypher_tool",
@@ -20,4 +21,5 @@ __all__ = [
     "get_document_graph_ingestion_tool",
     "ingest_documents_to_graph",
     "ingest_documents_tool",
+    "web_search",
 ]

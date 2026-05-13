@@ -20,6 +20,7 @@ from schemas import (
 )
 from sessions import get_session_manager
 from agents import generate_response, get_enabled_agents
+from agents.orchestrator import route_agent
 from tools.vector_tool import semantic_search
 
 from core.exceptions import (
@@ -266,10 +267,17 @@ async def chat(request: ChatRequest):
 
         # Run agent via unified factory with planning and validation
         # Cypher agent has comprehensive planning, validation, and retry capabilities
+        enabled_agents = get_enabled_agents()
+        selected_agent, routing_reason = route_agent(
+            query=request.message,
+            requested_agent=getattr(request, "agent_name", "auto"),
+            enabled_agents=enabled_agents,
+        )
+
         raw_reply = generate_response(
             agent_prompt, 
             session_id=request.session_id,
-            agent_name=getattr(request, 'agent_name', 'cypher')  # Default to cypher for best results
+            agent_name=selected_agent,
         )
         reply = format_agent_reply(raw_reply)
 
@@ -285,7 +293,12 @@ async def chat(request: ChatRequest):
             session_id=request.session_id,
             message_count=len(messages),
             sources=sources,
-            metadata={"model": settings.LLM_MODEL},
+            metadata={
+                "model": settings.LLM_MODEL,
+                "selected_agent": selected_agent,
+                "routing_reason": routing_reason,
+                "requested_agent": getattr(request, "agent_name", None),
+            },
         )
 
     except SessionException as e:
@@ -392,8 +405,8 @@ async def list_agents():
         return {
             "total": len(agents),
             "agents": agents,
-            "default_agent": "cypher",
-            "info": "Agents support planning, validation, and retry logic for intelligent reasoning"
+            "default_agent": "auto",
+            "info": "Use agent_name=auto (or orchestrator) to enable query-based agent routing"
         }
     except Exception as e:
         logger.error(f"Failed to list agents: {str(e)}")
