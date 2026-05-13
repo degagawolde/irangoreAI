@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from core.logger import get_logger
 from llms import get_llm
@@ -13,7 +13,18 @@ logger = get_logger(__name__)
 AUTO_AGENT_NAMES = {
     "auto",
     "orchestrator",
+    "orchastrator",
+    "orchestrator_agent",
     "router",
+}
+
+SPECIALIST_AGENT_MAP: Dict[str, str] = {
+    "graph": "graph_agent",
+    "sql": "sql_agent",
+    "web": "web_agent",
+    "darkintel": "darkintel_agent",
+    "files": "file_agent",
+    "synthesis": "synthesis_agent",
 }
 
 
@@ -97,3 +108,54 @@ def route_agent(
         fallback = _heuristic_route(query, enabled_agents)
         logger.warning(f"LLM router failed, using fallback agent '{fallback}': {exc}")
         return fallback, f"fallback routing used ({exc})"
+
+
+def plan_workflow(
+    query: str,
+    requested_agent: Optional[str],
+    enabled_agents: List[str],
+) -> Tuple[List[str], str]:
+    """Plan a multi-agent workflow.
+
+    Returns:
+        (workflow_agents, reason)
+    """
+    normalized_requested = (requested_agent or "").strip().lower()
+    if normalized_requested and normalized_requested not in AUTO_AGENT_NAMES:
+        return [requested_agent], "explicitly selected by user"
+
+    available = set(enabled_agents)
+    plan: List[str] = []
+    text = (query or "").lower()
+
+    if any(k in text for k in ["graph", "relationship", "connected", "path", "neo4j"]):
+        if "graph_agent" in available:
+            plan.append("graph_agent")
+
+    if any(k in text for k in ["sql", "table", "database", "postgres", "mysql", "query"]):
+        if "sql_agent" in available:
+            plan.append("sql_agent")
+
+    if any(k in text for k in ["web", "internet", "latest", "news", "current"]):
+        if "web_agent" in available:
+            plan.append("web_agent")
+
+    if any(k in text for k in ["dark web", "threat", "ioc", "leak", "breach", "tor"]):
+        if "darkintel_agent" in available:
+            plan.append("darkintel_agent")
+
+    if any(k in text for k in ["csv", "excel", "xlsx", "markdown", ".md", ".txt", "file"]):
+        if "file_agent" in available:
+            plan.append("file_agent")
+
+    if not plan:
+        single, reason = route_agent(query=query, requested_agent="auto", enabled_agents=enabled_agents)
+        plan = [single]
+        if "synthesis_agent" in available and single != "synthesis_agent":
+            plan.append("synthesis_agent")
+        return plan, f"fallback single-agent route used: {reason}"
+
+    if "synthesis_agent" in available and "synthesis_agent" not in plan:
+        plan.append("synthesis_agent")
+
+    return plan, "planned multi-agent workflow from query intent"

@@ -227,7 +227,7 @@ Customize agents directly in YAML:
 
 ```yaml
 settings:
-  default_agent: "cypher"
+  default_agent: "auto"
   max_iterations: 15
   verbose_default: true
 

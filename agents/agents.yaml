@@ -203,6 +203,160 @@ agents:
       type: "neo4j_chat_history"
     verbose: true
 
+  router_orchestrator:
+    name: "Router Orchestrator Agent"
+    description: "Interprets user intent and routes/decomposes tasks to specialist agents"
+    type: "react"
+    enabled: true
+    max_iterations: 8
+    system_prompt: |
+      You are the top-level orchestration agent.
+      1. Understand user intent and source requirements
+      2. Decide which specialist agents/tools should be used
+      3. Prioritize correctness and provenance
+      4. Return concise route rationale
+    tools:
+      - name: "General Chat"
+        description: "General reasoning tool"
+        type: "document_chat"
+    memory:
+      enabled: true
+      type: "neo4j_chat_history"
+    verbose: true
+
+  graph_agent:
+    name: "Graph Specialist Agent"
+    description: "Neo4j traversal and relationship reasoning specialist"
+    type: "react"
+    enabled: true
+    max_iterations: 14
+    system_prompt: |
+      You are the graph specialist.
+      Use graph and document tools to extract relationship-grounded evidence.
+      Return structured findings with confidence notes.
+    tools:
+      - name: "Graph Database Query"
+        description: "Query document relationships using Cypher"
+        type: "cypher_qa"
+      - name: "Find Relevant Documents"
+        description: "Find documents relevant to a query"
+        type: "find_relevant_documents"
+      - name: "Document Context Search"
+        description: "Vector search for graph-adjacent context"
+        type: "vector_search"
+    memory:
+      enabled: true
+      type: "neo4j_chat_history"
+    verbose: true
+
+  sql_agent:
+    name: "SQL Specialist Agent"
+    description: "Relational schema and query specialist"
+    type: "react"
+    enabled: true
+    max_iterations: 14
+    system_prompt: |
+      You are the SQL specialist.
+      Start by discovering tables/schema, then run read-only queries.
+      Never invent rows; reason from returned evidence only.
+    tools:
+      - name: "SQL List Tables"
+        description: "List relational tables"
+        type: "sql_list_tables"
+      - name: "SQL Describe Table"
+        description: "Describe a table's schema"
+        type: "sql_describe_table"
+      - name: "SQL Query"
+        description: "Execute read-only SQL query"
+        type: "sql_query"
+    memory:
+      enabled: true
+      type: "neo4j_chat_history"
+    verbose: true
+
+  web_agent:
+    name: "Web Specialist Agent"
+    description: "Open-web search and recency-aware research specialist"
+    type: "react"
+    enabled: true
+    max_iterations: 14
+    system_prompt: |
+      You are the web specialist.
+      Retrieve relevant web context and provide source links.
+      Distinguish between confirmed facts and unverified claims.
+    tools:
+      - name: "Internet Search"
+        description: "Search public internet content"
+        type: "web_search"
+    memory:
+      enabled: true
+      type: "neo4j_chat_history"
+    verbose: true
+
+  darkintel_agent:
+    name: "Dark Intelligence Agent"
+    description: "Dark web intelligence connector specialist"
+    type: "react"
+    enabled: true
+    max_iterations: 14
+    system_prompt: |
+      You are the dark-intel specialist.
+      Use the connector for threat/risk intelligence and summarize responsibly.
+      If connector is not configured, clearly report that gap.
+    tools:
+      - name: "DarkIntel Search"
+        description: "Query external dark-intel provider"
+        type: "darkintel_search"
+    memory:
+      enabled: true
+      type: "neo4j_chat_history"
+    verbose: true
+
+  file_agent:
+    name: "File Intelligence Agent"
+    description: "CSV/XLSX/Markdown/TXT content extraction specialist"
+    type: "react"
+    enabled: true
+    max_iterations: 14
+    system_prompt: |
+      You are the file-analysis specialist.
+      Discover files, search local content, and report grounded findings with references.
+    tools:
+      - name: "List Data Files"
+        description: "List supported local files"
+        type: "list_data_files"
+      - name: "File Search"
+        description: "Search local files for relevant evidence"
+        type: "file_search"
+    memory:
+      enabled: true
+      type: "neo4j_chat_history"
+    verbose: true
+
+  synthesis_agent:
+    name: "Synthesis Agent"
+    description: "Cross-source reasoning, conflict detection, and final synthesis"
+    type: "react"
+    enabled: true
+    max_iterations: 16
+    system_prompt: |
+      You are the synthesis specialist.
+      Combine intermediate findings from specialist agents.
+      1. Preserve provenance
+      2. Surface conflicts and uncertainty
+      3. Provide a final answer with confidence
+    tools:
+      - name: "Package Findings"
+        description: "Package findings under a shared result contract"
+        type: "package_findings"
+      - name: "General Chat"
+        description: "Reasoning and synthesis support"
+        type: "document_chat"
+    memory:
+      enabled: true
+      type: "neo4j_chat_history"
+    verbose: true
+
 # Tool definitions
 tools:
   document_chat:
@@ -259,13 +413,55 @@ tools:
     function: "web_search"
     description: "Search public internet content for current or external information"
 
+  sql_list_tables:
+    type: "function"
+    module: "tools.sql_tool"
+    function: "sql_list_tables"
+    description: "List relational database tables"
+
+  sql_describe_table:
+    type: "function"
+    module: "tools.sql_tool"
+    function: "sql_describe_table"
+    description: "Describe columns for a specific table"
+
+  sql_query:
+    type: "function"
+    module: "tools.sql_tool"
+    function: "sql_query"
+    description: "Execute read-only SQL query"
+
+  list_data_files:
+    type: "function"
+    module: "tools.file_intel_tool"
+    function: "list_data_files"
+    description: "List supported local data files"
+
+  file_search:
+    type: "function"
+    module: "tools.file_intel_tool"
+    function: "file_search"
+    description: "Search local data files for text matches"
+
+  darkintel_search:
+    type: "function"
+    module: "tools.darkintel_tool"
+    function: "darkintel_search"
+    description: "Search configured dark-intel provider"
+
+  package_findings:
+    type: "function"
+    module: "tools.synthesis_tool"
+    function: "package_findings"
+    description: "Package findings using shared evidence contract"
+
 # Global agent settings
 settings:
   system_prompt_preamble: |
     You are a tool-using assistant for document-grounded question answering.
     Use available tools deliberately and only provide answers supported by retrieved content.
     If information is missing, say so clearly and suggest what to retrieve next.
-  default_agent: "cypher"  # Use cypher for best results
+  default_agent: "auto"  # auto invokes orchestrator routing/workflow
   timeout: 300  # seconds
   max_iterations: 15  # Increased for planning and validation cycles
   verbose_default: true  # Show planning steps

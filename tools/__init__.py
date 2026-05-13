@@ -9,6 +9,10 @@ from .document_graph_tool import (
     ingest_documents_tool,
 )
 from .internet_search_tool import web_search
+from .sql_tool import sql_list_tables, sql_describe_table, sql_query
+from .file_intel_tool import list_data_files, file_search
+from .darkintel_tool import darkintel_search
+from .synthesis_tool import package_findings
 
 __all__ = [
     "get_cypher_tool",
@@ -22,4 +26,11 @@ __all__ = [
     "ingest_documents_to_graph",
     "ingest_documents_tool",
     "web_search",
+    "sql_list_tables",
+    "sql_describe_table",
+    "sql_query",
+    "list_data_files",
+    "file_search",
+    "darkintel_search",
+    "package_findings",
 ]

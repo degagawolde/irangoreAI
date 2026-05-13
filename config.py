@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     SESSION_TIMEOUT: int = 3600  # 1 hour in seconds
     MAX_HISTORY_LENGTH: int = 50  # Max messages to keep in history
 
+    # Multi-source connectors
+    SQL_DATABASE_URL: Optional[str] = os.getenv("SQL_DATABASE_URL")
+    FILE_DATA_ROOT: str = os.getenv("FILE_DATA_ROOT", "./_files")
+    DARKINTEL_API_URL: Optional[str] = os.getenv("DARKINTEL_API_URL")
+    DARKINTEL_API_KEY: Optional[str] = os.getenv("DARKINTEL_API_KEY")
+
     # Logging Configuration
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     LOG_FORMAT: str = "json"  # json or standard

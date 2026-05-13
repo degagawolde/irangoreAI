@@ -20,7 +20,7 @@ from schemas import (
 )
 from sessions import get_session_manager
 from agents import generate_response, get_enabled_agents
-from agents.orchestrator import route_agent
+from agents.orchestrator import plan_workflow
 from tools.vector_tool import semantic_search
 
 from core.exceptions import (
@@ -126,6 +126,55 @@ def format_agent_reply(raw_text: str) -> str:
     formatted = "\n".join(cleaned_lines)
     formatted = re.sub(r"\n{3,}", "\n\n", formatted).strip()
     return formatted
+
+
+def _run_agent_workflow(
+    request: ChatRequest,
+    agent_prompt: str,
+    session_id: str,
+    enabled_agents: List[str],
+):
+    """Run either a single routed agent or a multi-agent orchestrated workflow."""
+    requested_agent = getattr(request, "agent_name", "auto")
+    workflow_agents, workflow_reason = plan_workflow(
+        query=request.message,
+        requested_agent=requested_agent,
+        enabled_agents=enabled_agents,
+    )
+
+    # Single-agent path
+    if len(workflow_agents) == 1:
+        selected_agent = workflow_agents[0]
+        raw_reply = generate_response(
+            agent_prompt,
+            session_id=session_id,
+            agent_name=selected_agent,
+        )
+        return raw_reply, selected_agent, workflow_reason, workflow_agents, []
+
+    # Multi-agent path: run specialists sequentially, synthesize at the end.
+    intermediate = []
+    working_prompt = agent_prompt
+    final_raw_reply = ""
+    selected_agent = workflow_agents[-1]
+
+    for idx, agent_name in enumerate(workflow_agents):
+        raw = generate_response(
+            working_prompt,
+            session_id=session_id,
+            agent_name=agent_name,
+        )
+        intermediate.append({"agent": agent_name, "output": raw})
+        if idx < len(workflow_agents) - 1:
+            working_prompt = (
+                f"Original user request:\n{request.message}\n\n"
+                f"Intermediate findings so far:\n{intermediate}\n\n"
+                "Continue your specialist analysis and return concise, evidence-grounded findings."
+            )
+        else:
+            final_raw_reply = raw
+
+    return final_raw_reply, selected_agent, workflow_reason, workflow_agents, intermediate
 
 
 # ==================== Lifespan Events ====================
@@ -265,18 +314,13 @@ async def chat(request: ChatRequest):
             else request.message
         )
 
-        # Run agent
+        # Run agent or multi-agent orchestration workflow
         enabled_agents = get_enabled_agents()
-        selected_agent, routing_reason = route_agent(
-            query=request.message,
-            requested_agent=getattr(request, "agent_name", "auto"),
-            enabled_agents=enabled_agents,
-        )
-
-        raw_reply = generate_response(
-            agent_prompt, 
+        raw_reply, selected_agent, routing_reason, workflow_agents, intermediate_outputs = _run_agent_workflow(
+            request=request,
+            agent_prompt=agent_prompt,
             session_id=request.session_id,
-            agent_name=selected_agent,
+            enabled_agents=enabled_agents,
         )
         reply = format_agent_reply(raw_reply)
 
@@ -297,6 +341,8 @@ async def chat(request: ChatRequest):
                 "selected_agent": selected_agent,
                 "routing_reason": routing_reason,
                 "requested_agent": getattr(request, "agent_name", None),
+                "workflow_agents": workflow_agents,
+                "intermediate_steps": len(intermediate_outputs),
             },
         )
 
