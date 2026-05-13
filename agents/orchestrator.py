@@ -10,7 +10,11 @@ from llms import get_llm
 
 logger = get_logger(__name__)
 
-AUTO_AGENT_NAMES = {"auto", "orchestrator", "router"}
+AUTO_AGENT_NAMES = {
+    "auto",
+    "orchestrator",
+    "router",
+}
 
 
 def _heuristic_route(query: str, enabled_agents: List[str]) -> str:
@@ -45,7 +49,9 @@ def route_agent(
     Returns:
         Tuple of (agent_name, reason)
     """
-    if requested_agent and requested_agent not in AUTO_AGENT_NAMES:
+    normalized_requested = (requested_agent or "").strip().lower()
+
+    if normalized_requested and normalized_requested not in AUTO_AGENT_NAMES:
         return requested_agent, "explicitly selected by user"
 
     if not enabled_agents:
@@ -91,4 +97,3 @@ def route_agent(
         fallback = _heuristic_route(query, enabled_agents)
         logger.warning(f"LLM router failed, using fallback agent '{fallback}': {exc}")
         return fallback, f"fallback routing used ({exc})"
-

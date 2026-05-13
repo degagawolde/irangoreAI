@@ -265,8 +265,7 @@ async def chat(request: ChatRequest):
             else request.message
         )
 
-        # Run agent via unified factory with planning and validation
-        # Cypher agent has comprehensive planning, validation, and retry capabilities
+        # Run agent
         enabled_agents = get_enabled_agents()
         selected_agent, routing_reason = route_agent(
             query=request.message,

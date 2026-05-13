@@ -3,6 +3,7 @@
 from typing import List, Dict, Any
 from core.logger import get_logger
 from core.exceptions import GraphException
+from config import get_settings
 from graph import get_graph
 from llms import get_embeddings
 
@@ -15,6 +16,7 @@ class DocumentDiscoveryTool:
     _instance = None
     _graph = None
     _embeddings = None
+    _settings = None
 
     def __new__(cls):
         """Singleton pattern."""
@@ -30,6 +32,7 @@ class DocumentDiscoveryTool:
     def _initialize(self) -> None:
         """Initialize graph and embeddings."""
         try:
+            self._settings = get_settings()
             self._graph = get_graph()
             self._embeddings = get_embeddings()
             logger.info("Document discovery tool initialized")
@@ -176,7 +179,7 @@ class DocumentDiscoveryTool:
             logger.error(f"Failed in smart document search: {str(e)}")
             raise GraphException(f"Failed in smart document search: {str(e)}")
 
-    
+    def find_relevant_documents(self, query: str, threshold: float = 0.3) -> List[Dict[str, Any]]:
         """Find documents relevant to a query using semantic similarity.
         
         This method:
@@ -216,7 +219,7 @@ class DocumentDiscoveryTool:
             """
             
             params = {
-                "vector_index_name": "document-chunks",
+                "vector_index_name": self._settings.VECTOR_INDEX_NAME,
                 "query_vector": query_vector,
                 "threshold": threshold
             }
