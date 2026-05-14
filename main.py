@@ -2,14 +2,25 @@
 
 from contextlib import asynccontextmanager
 from datetime import datetime
+import json
+import time
 import re
-from typing import List
+from typing import List, Dict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from config import get_settings
 from core import setup_logging, get_logger
+from core.runtime_services import (
+    SimpleTTLCache,
+    Metrics,
+    score_source,
+    detect_conflicts,
+    scan_file_state,
+)
+from graph.observability import get_observability_store
 from schemas import (
     ChatRequest,
     ChatResponse,
@@ -34,6 +45,9 @@ setup_logging(log_level="INFO", log_format="standard")
 logger = get_logger(__name__)
 
 settings = get_settings()
+response_cache = SimpleTTLCache()
+metrics = Metrics()
+last_file_state: Dict[str, float] = {}
 
 URL_PATTERN = re.compile(r"https?://[^\s)>\]]+")
 
@@ -194,6 +208,23 @@ def _citations_to_sources(citations: List[str]) -> List[dict]:
     return sources
 
 
+def _score_sources(sources: List[dict]) -> List[dict]:
+    """Attach trust/recency/confidence scores to sources."""
+    scored = []
+    for idx, src in enumerate(sources, start=1):
+        url = src.get("source") or ""
+        recency, trust = score_source(url, datetime.now())
+        item = dict(src)
+        item["id"] = item.get("id") or idx
+        item["url"] = url
+        item["retrieved_at"] = item.get("retrieved_at") or datetime.now().isoformat()
+        item["recency_score"] = round(recency, 3)
+        item["trust_score"] = round(trust, 3)
+        item["confidence"] = round((recency + trust) / 2.0, 3)
+        scored.append(item)
+    return scored
+
+
 def _ensure_sources_section(reply: str, citations: List[str]) -> str:
     """Ensure final reply includes explicit source links."""
     if not citations:
@@ -231,31 +262,59 @@ def _run_agent_workflow(
             session_id=session_id,
             agent_name=selected_agent,
         )
-        return raw_reply, selected_agent, workflow_reason, workflow_agents, [], []
+        return raw_reply, selected_agent, workflow_reason, workflow_agents, [], [], []
 
-    # Multi-agent path: run specialists sequentially, synthesize at the end.
+    # Multi-agent path: run specialists (optionally in parallel), then synthesize.
     intermediate = []
+    step_records = []
     workflow_citations: List[str] = []
     working_prompt = agent_prompt
     final_raw_reply = ""
     selected_agent = workflow_agents[-1]
+    specialists = workflow_agents[:-1]
+    synthesis_agent = workflow_agents[-1]
 
-    for idx, agent_name in enumerate(workflow_agents):
-        raw = generate_response(
-            working_prompt,
-            session_id=session_id,
-            agent_name=agent_name,
-        )
-        intermediate.append({"agent": agent_name, "output": raw})
-        workflow_citations.extend(_extract_web_citations(raw))
-        if idx < len(workflow_agents) - 1:
-            working_prompt = (
-                f"Original user request:\n{request.message}\n\n"
-                f"Intermediate findings so far:\n{intermediate}\n\n"
-                "Continue your specialist analysis and return concise, evidence-grounded findings."
+    if settings.ENABLE_PARALLEL_SPECIALISTS and len(specialists) > 1:
+        with ThreadPoolExecutor(max_workers=min(4, len(specialists))) as executor:
+            futures = {
+                executor.submit(
+                    generate_response,
+                    working_prompt,
+                    session_id=session_id,
+                    agent_name=agent_name,
+                ): agent_name
+                for agent_name in specialists
+            }
+            for fut in as_completed(futures):
+                agent_name = futures[fut]
+                raw = fut.result()
+                intermediate.append({"agent": agent_name, "output": raw})
+                step_records.append({"agent": agent_name, "output": raw})
+                workflow_citations.extend(_extract_web_citations(raw))
+    else:
+        for agent_name in specialists:
+            raw = generate_response(
+                working_prompt,
+                session_id=session_id,
+                agent_name=agent_name,
             )
-        else:
-            final_raw_reply = raw
+            intermediate.append({"agent": agent_name, "output": raw})
+            step_records.append({"agent": agent_name, "output": raw})
+            workflow_citations.extend(_extract_web_citations(raw))
+
+    synthesis_prompt = (
+        f"Original user request:\n{request.message}\n\n"
+        f"Specialist findings:\n{intermediate}\n\n"
+        "Synthesize into one coherent answer with citations and uncertainty notes."
+    )
+    final_raw_reply = generate_response(
+        synthesis_prompt,
+        session_id=session_id,
+        agent_name=synthesis_agent,
+    )
+    intermediate.append({"agent": synthesis_agent, "output": final_raw_reply})
+    step_records.append({"agent": synthesis_agent, "output": final_raw_reply})
+    workflow_citations.extend(_extract_web_citations(final_raw_reply))
 
     # Deduplicate citations while preserving order
     deduped = []
@@ -265,7 +324,7 @@ def _run_agent_workflow(
             seen.add(c)
             deduped.append(c)
 
-    return final_raw_reply, selected_agent, workflow_reason, workflow_agents, intermediate, deduped
+    return final_raw_reply, selected_agent, workflow_reason, workflow_agents, intermediate, deduped, step_records
 
 
 # ==================== Lifespan Events ====================
@@ -375,8 +434,21 @@ async def health_check():
 async def chat(request: ChatRequest):
     """Chat endpoint using agentic AI with Graph RAG."""
     try:
+        started = time.perf_counter()
+        metrics.inc("requests_total")
+        cache_key = json.dumps(
+            {"m": request.message, "a": request.agent_name, "o": request.output_mode},
+            sort_keys=True,
+        )
+        cached = response_cache.get(cache_key)
+        if cached is not None:
+            metrics.inc("cache_hits")
+            return cached
+        metrics.inc("cache_misses")
+
         # Get or create session
         session_manager = get_session_manager()
+        obs = get_observability_store()
 
         if request.session_id:
             session = session_manager.get_session(request.session_id)
@@ -407,12 +479,26 @@ async def chat(request: ChatRequest):
 
         # Run agent or multi-agent orchestration workflow
         enabled_agents = get_enabled_agents()
-        raw_reply, selected_agent, routing_reason, workflow_agents, intermediate_outputs, workflow_citations = _run_agent_workflow(
+        trace_id = obs.create_trace(
+            session_id=request.session_id,
+            request_message=request.message,
+            requested_agent=getattr(request, "agent_name", None),
+        )
+        raw_reply, selected_agent, routing_reason, workflow_agents, intermediate_outputs, workflow_citations, step_records = _run_agent_workflow(
             request=request,
             agent_prompt=agent_prompt,
             session_id=request.session_id,
             enabled_agents=enabled_agents,
         )
+        for idx, step in enumerate(step_records, start=1):
+            try:
+                obs.add_trace_step(trace_id, step["agent"], str(step["output"]), idx)
+            except Exception:
+                pass
+        try:
+            obs.finish_trace(trace_id, selected_agent, workflow_agents, status="ok")
+        except Exception:
+            pass
         reply = format_agent_reply(raw_reply)
         reply = _ensure_sources_section(reply, workflow_citations)
 
@@ -425,8 +511,35 @@ async def chat(request: ChatRequest):
         web_sources = _citations_to_sources(workflow_citations)
         if web_sources:
             sources = (sources or []) + web_sources
+        sources = _score_sources(sources or [])
 
-        return ChatResponse(
+        conflicts = detect_conflicts(reply)
+        if conflicts:
+            reply = (
+                f"{reply}\n\nConflicts Detected:\n"
+                + "\n".join([f"- {c['claim_a']}  <>  {c['claim_b']}" for c in conflicts])
+            )
+
+        if request.output_mode == "decision":
+            avg_conf = round(
+                sum([s.get("confidence", 0.6) for s in sources]) / max(len(sources), 1),
+                3,
+            )
+            reply = json.dumps(
+                {
+                    "answer": reply,
+                    "confidence": avg_conf,
+                    "assumptions": ["Source trust and recency heuristics were applied."],
+                    "missing_data": [] if sources else ["No sources were retrieved."],
+                    "next_best_actions": [
+                        "Add more targeted source constraints",
+                        "Cross-verify with additional trusted sources",
+                    ],
+                },
+                ensure_ascii=True,
+            )
+
+        response = ChatResponse(
             reply=reply,
             session_id=request.session_id,
             message_count=len(messages),
@@ -439,8 +552,15 @@ async def chat(request: ChatRequest):
                 "workflow_agents": workflow_agents,
                 "intermediate_steps": len(intermediate_outputs),
                 "web_citations_count": len(workflow_citations),
+                "conflicts_count": len(conflicts),
+                "output_mode": request.output_mode,
+                "trace_id": trace_id,
             },
         )
+        metrics.observe_latency((time.perf_counter() - started) * 1000.0)
+        metrics.inc_agent(selected_agent)
+        response_cache.set(cache_key, response, settings.RESPONSE_CACHE_TTL_SECONDS)
+        return response
 
     except SessionException as e:
         logger.error(f"Session error: {str(e)}")
@@ -552,6 +672,96 @@ async def list_agents():
     except Exception as e:
         logger.error(f"Failed to list agents: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to list agents")
+
+
+@app.get("/metrics")
+async def get_metrics():
+    """Runtime observability metrics."""
+    snap = metrics.snapshot()
+    metric_id = None
+    try:
+        metric_id = get_observability_store().save_metrics_snapshot(snap)
+    except Exception:
+        pass
+    return {"metric_id": metric_id, **snap}
+
+
+@app.get("/metrics/snapshots")
+async def get_metrics_snapshots(limit: int = 50):
+    """Get persisted metric snapshots from Neo4j."""
+    try:
+        rows = get_observability_store().list_metric_snapshots(limit=limit)
+        return {"total": len(rows), "items": rows}
+    except Exception as e:
+        logger.error(f"Failed to load metric snapshots: {e}")
+        raise HTTPException(status_code=500, detail="Failed to load metric snapshots")
+
+
+@app.get("/traces")
+async def list_traces(limit: int = 50):
+    """List recent traces."""
+    try:
+        traces = get_observability_store().list_traces(limit=limit)
+        return {"total": len(traces), "items": traces}
+    except Exception as e:
+        logger.error(f"Failed to list traces: {e}")
+        raise HTTPException(status_code=500, detail="Failed to list traces")
+
+
+@app.get("/traces/{trace_id}")
+async def get_trace(trace_id: str):
+    """Get one trace with its steps/tool calls."""
+    try:
+        trace = get_observability_store().get_trace(trace_id)
+        if not trace:
+            raise HTTPException(status_code=404, detail="Trace not found")
+        return trace
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get trace: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get trace")
+
+
+@app.get("/sessions/{session_id}/graph")
+async def get_session_graph(session_id: str):
+    """Get persisted session graph (session + messages + traces)."""
+    try:
+        data = get_observability_store().get_session_graph(session_id)
+        if not data:
+            raise HTTPException(status_code=404, detail="Session not found in graph")
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get session graph: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get session graph")
+
+
+@app.get("/dashboard/summary")
+async def dashboard_summary():
+    """Single-call dashboard summary for observability UI."""
+    try:
+        return get_observability_store().dashboard_summary()
+    except Exception as e:
+        logger.error(f"Failed to build dashboard summary: {e}")
+        raise HTTPException(status_code=500, detail="Failed to build dashboard summary")
+
+
+@app.post("/refresh-index")
+async def refresh_index():
+    """Check incremental file changes for refresh workflows."""
+    global last_file_state
+    current = scan_file_state(settings.FILE_DATA_ROOT)
+    changed = [p for p, ts in current.items() if last_file_state.get(p) != ts]
+    removed = [p for p in last_file_state.keys() if p not in current]
+    last_file_state = current
+    return {
+        "changed_count": len(changed),
+        "removed_count": len(removed),
+        "changed_files": changed[:200],
+        "removed_files": removed[:200],
+    }
 
 
 # ==================== Root Endpoint ====================

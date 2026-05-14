@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     SERPER_API_KEY: Optional[str] = os.getenv("SERPER_API_KEY")
     DARKINTEL_API_URL: Optional[str] = os.getenv("DARKINTEL_API_URL")
     DARKINTEL_API_KEY: Optional[str] = os.getenv("DARKINTEL_API_KEY")
+    RESPONSE_CACHE_TTL_SECONDS: int = int(os.getenv("RESPONSE_CACHE_TTL_SECONDS", "600"))
+    ENABLE_PARALLEL_SPECIALISTS: bool = os.getenv("ENABLE_PARALLEL_SPECIALISTS", "true").lower() == "true"
 
     # Logging Configuration
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")

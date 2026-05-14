@@ -28,6 +28,10 @@ class ChatRequest(BaseModel):
     agent_name: Optional[str] = Field(
         default="auto", description="Agent to use: auto/orchestrator, chat, vector, cypher, full, scoped, deep_search, graph_agent, sql_agent, web_agent, darkintel_agent, file_agent, synthesis_agent"
     )
+    output_mode: str = Field(
+        default="narrative",
+        description="Response mode: narrative or decision",
+    )
 
 
 class ChatResponse(BaseModel):

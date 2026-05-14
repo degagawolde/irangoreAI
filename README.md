@@ -257,12 +257,15 @@ agents:
 {
   "message": "Your question",
   "agent_name": "auto",    // optional, defaults to auto (orchestrator routing)
+  "output_mode": "narrative", // optional: narrative | decision
   "session_id": null,      // optional, creates new if null
   "include_sources": true  // optional
 }
 ```
 
 **GET /agents** - List available agents and capabilities
+**GET /metrics** - Runtime counters, latency, and agent usage
+**POST /refresh-index** - Incremental file-change check for refresh workflows
 
 ### Session Management
 
@@ -270,6 +273,12 @@ agents:
 **GET /sessions** - List all sessions
 **GET /sessions/{session_id}** - Get session info
 **DELETE /sessions/{session_id}** - Delete session
+
+### Evaluation
+
+```bash
+python3 evaluate_agents.py
+```
 **GET /history/{session_id}** - Get chat history
 
 ### System

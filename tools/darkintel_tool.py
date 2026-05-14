@@ -14,6 +14,17 @@ from core.logger import get_logger
 from .result_contract import make_tool_result
 
 logger = get_logger(__name__)
+BLOCKED_TERMS = [
+    "how to hack",
+    "exploit step by step",
+    "steal credentials",
+    "build malware",
+]
+
+
+def _is_blocked_query(query: str) -> bool:
+    text = (query or "").lower()
+    return any(term in text for term in BLOCKED_TERMS)
 
 
 def darkintel_search(query: str, max_results: int = 10, timeout_seconds: int = 15) -> str:
@@ -25,6 +36,14 @@ def darkintel_search(query: str, max_results: int = 10, timeout_seconds: int = 1
     JSON body: {"query": "...", "max_results": 10}
     """
     settings = get_settings()
+    if _is_blocked_query(query):
+        return make_tool_result(
+            source="darkintel",
+            status="blocked",
+            summary="Query blocked by safety policy.",
+            confidence=0.0,
+            metadata={"policy": "darkintel_safe_use"},
+        )
     api_url = getattr(settings, "DARKINTEL_API_URL", None)
     api_key = getattr(settings, "DARKINTEL_API_KEY", None)
 
@@ -74,4 +93,3 @@ def darkintel_search(query: str, max_results: int = 10, timeout_seconds: int = 1
             confidence=0.0,
             raw_ref=api_url,
         )
-

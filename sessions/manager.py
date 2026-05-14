@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any
 from core.logger import get_logger
 from core.exceptions import SessionException
 from config import get_settings
+from graph.observability import get_observability_store
 
 logger = get_logger(__name__)
 
@@ -69,6 +70,10 @@ class SessionManager:
         try:
             session_id = session_id or str(uuid.uuid4())
             self._sessions[session_id] = ChatSession(session_id)
+            try:
+                get_observability_store().upsert_session(session_id)
+            except Exception:
+                pass
             logger.info(f"Created session: {session_id}")
             return session_id
 
@@ -102,6 +107,10 @@ class SessionManager:
                 raise SessionException(f"Session not found: {session_id}")
 
             session.add_message(role, content)
+            try:
+                get_observability_store().add_message(session_id, role, content)
+            except Exception:
+                pass
             logger.debug(f"Added {role} message to session: {session_id}")
 
         except SessionException:
