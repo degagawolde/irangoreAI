@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     # Multi-source connectors
     SQL_DATABASE_URL: Optional[str] = os.getenv("SQL_DATABASE_URL")
     FILE_DATA_ROOT: str = os.getenv("FILE_DATA_ROOT", "./_files")
+    SERPER_API_KEY: Optional[str] = os.getenv("SERPER_API_KEY")
     DARKINTEL_API_URL: Optional[str] = os.getenv("DARKINTEL_API_URL")
     DARKINTEL_API_KEY: Optional[str] = os.getenv("DARKINTEL_API_KEY")
 

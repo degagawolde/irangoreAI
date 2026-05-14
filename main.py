@@ -35,6 +35,9 @@ logger = get_logger(__name__)
 
 settings = get_settings()
 
+URL_PATTERN = re.compile(r"https?://[^\s)>\]]+")
+
+
 def build_sources(query: str, k: int = 5) -> List[dict]:
     """Build source entries from semantic search results."""
     try:
@@ -128,6 +131,84 @@ def format_agent_reply(raw_text: str) -> str:
     return formatted
 
 
+def _extract_web_citations(text: str) -> List[str]:
+    """Extract citation lines like '[1] https://...' or raw URLs."""
+    if not text:
+        return []
+
+    urls: List[str] = []
+    seen = set()
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        match = re.match(r"^\[(\d+)\]\s+(https?://\S+)$", stripped)
+        if match:
+            idx = match.group(1)
+            url = match.group(2).rstrip(".,);")
+            entry = f"[{idx}] {url}"
+            if entry not in seen:
+                seen.add(entry)
+                urls.append(entry)
+
+    if urls:
+        return urls
+
+    # Fallback: any URL
+    for raw in URL_PATTERN.findall(text):
+        url = raw.rstrip(".,);")
+        entry = f"[{len(urls) + 1}] {url}"
+        if entry not in seen:
+            seen.add(entry)
+            urls.append(entry)
+
+    return urls
+
+
+def _citations_to_sources(citations: List[str]) -> List[dict]:
+    """Convert citation lines into structured source entries."""
+    sources: List[dict] = []
+    for item in citations:
+        match = re.match(r"^\[(\d+)\]\s+(https?://\S+)$", item.strip())
+        if match:
+            sources.append(
+                {
+                    "source": match.group(2).rstrip(".,);"),
+                    "document": f"web:{match.group(1)}",
+                    "page": None,
+                    "line": None,
+                    "chunk_index": None,
+                }
+            )
+        else:
+            url_match = URL_PATTERN.search(item)
+            if url_match:
+                sources.append(
+                    {
+                        "source": url_match.group(0).rstrip(".,);"),
+                        "document": "web",
+                        "page": None,
+                        "line": None,
+                        "chunk_index": None,
+                    }
+                )
+    return sources
+
+
+def _ensure_sources_section(reply: str, citations: List[str]) -> str:
+    """Ensure final reply includes explicit source links."""
+    if not citations:
+        return reply
+
+    # If reply already contains URLs, keep as-is.
+    if URL_PATTERN.search(reply):
+        return reply
+
+    # If Sources exists but has no URLs, append explicit link list.
+    heading = "Source Links:" if re.search(r"(?im)^sources\s*:", reply) or re.search(r"(?im)^sources\s*$", reply) else "Sources:"
+    sources_block = heading + "\n" + "\n".join(citations)
+    return f"{reply}\n\n{sources_block}".strip()
+
+
 def _run_agent_workflow(
     request: ChatRequest,
     agent_prompt: str,
@@ -150,10 +231,11 @@ def _run_agent_workflow(
             session_id=session_id,
             agent_name=selected_agent,
         )
-        return raw_reply, selected_agent, workflow_reason, workflow_agents, []
+        return raw_reply, selected_agent, workflow_reason, workflow_agents, [], []
 
     # Multi-agent path: run specialists sequentially, synthesize at the end.
     intermediate = []
+    workflow_citations: List[str] = []
     working_prompt = agent_prompt
     final_raw_reply = ""
     selected_agent = workflow_agents[-1]
@@ -165,6 +247,7 @@ def _run_agent_workflow(
             agent_name=agent_name,
         )
         intermediate.append({"agent": agent_name, "output": raw})
+        workflow_citations.extend(_extract_web_citations(raw))
         if idx < len(workflow_agents) - 1:
             working_prompt = (
                 f"Original user request:\n{request.message}\n\n"
@@ -174,7 +257,15 @@ def _run_agent_workflow(
         else:
             final_raw_reply = raw
 
-    return final_raw_reply, selected_agent, workflow_reason, workflow_agents, intermediate
+    # Deduplicate citations while preserving order
+    deduped = []
+    seen = set()
+    for c in workflow_citations:
+        if c not in seen:
+            seen.add(c)
+            deduped.append(c)
+
+    return final_raw_reply, selected_agent, workflow_reason, workflow_agents, intermediate, deduped
 
 
 # ==================== Lifespan Events ====================
@@ -316,13 +407,14 @@ async def chat(request: ChatRequest):
 
         # Run agent or multi-agent orchestration workflow
         enabled_agents = get_enabled_agents()
-        raw_reply, selected_agent, routing_reason, workflow_agents, intermediate_outputs = _run_agent_workflow(
+        raw_reply, selected_agent, routing_reason, workflow_agents, intermediate_outputs, workflow_citations = _run_agent_workflow(
             request=request,
             agent_prompt=agent_prompt,
             session_id=request.session_id,
             enabled_agents=enabled_agents,
         )
         reply = format_agent_reply(raw_reply)
+        reply = _ensure_sources_section(reply, workflow_citations)
 
         # Add assistant message to session
         session_manager.add_message(request.session_id, "assistant", reply)
@@ -330,6 +422,9 @@ async def chat(request: ChatRequest):
         messages = session_manager.get_messages(request.session_id)
 
         sources = build_sources(request.message) if request.include_sources else None
+        web_sources = _citations_to_sources(workflow_citations)
+        if web_sources:
+            sources = (sources or []) + web_sources
 
         return ChatResponse(
             reply=reply,
@@ -343,6 +438,7 @@ async def chat(request: ChatRequest):
                 "requested_agent": getattr(request, "agent_name", None),
                 "workflow_agents": workflow_agents,
                 "intermediate_steps": len(intermediate_outputs),
+                "web_citations_count": len(workflow_citations),
             },
         )
 

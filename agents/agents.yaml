@@ -181,6 +181,10 @@ agents:
       3. Cross-check important claims across multiple results when possible.
       4. Clearly separate web-derived context from document-derived evidence.
       5. If information is uncertain, state uncertainty and suggest follow-up queries.
+      CITATION RULES:
+      - When using web_search output, cite claims with bracketed source ids, e.g. [1], [2].
+      - Include a final "Sources" section listing top-k citation ids and URLs exactly as provided.
+      - Do not present web-derived claims without citations.
       Prioritize accuracy over speed and provide source links when available.
     tools:
       - name: "Internet Search"
@@ -284,6 +288,10 @@ agents:
       You are the web specialist.
       Retrieve relevant web context and provide source links.
       Distinguish between confirmed facts and unverified claims.
+      CITATION RULES:
+      - Use the citation ids from web_search output (e.g. [1], [2]) in your answer body.
+      - End every answer with a "Sources" section containing top-k cited URLs.
+      - If no citations are available, explicitly state that evidence was insufficient.
     tools:
       - name: "Internet Search"
         description: "Search public internet content"

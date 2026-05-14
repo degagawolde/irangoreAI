@@ -2,27 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import requests
 
+from config import get_settings
 from core.logger import get_logger
 
 logger = get_logger(__name__)
 
 
-def _safe_get(d: Dict[str, Any], path: List[str], default: Any = None) -> Any:
-    """Safely read nested keys from dict-like payloads."""
-    current: Any = d
-    for key in path:
-        if not isinstance(current, dict):
-            return default
-        current = current.get(key)
-    return current if current is not None else default
-
-
 def web_search(query: str, max_results: int = 5, timeout_seconds: int = 10) -> str:
-    """Search the web using DuckDuckGo instant answer + related topics.
+    """Search the web using Serper Google Search API.
 
     Args:
         query: User query to search for.
@@ -38,15 +29,22 @@ def web_search(query: str, max_results: int = 5, timeout_seconds: int = 10) -> s
 
     max_results = max(1, min(int(max_results), 10))
     timeout_seconds = max(3, min(int(timeout_seconds), 30))
+    settings = get_settings()
+    api_key = getattr(settings, "SERPER_API_KEY", None)
+
+    if not api_key:
+        return "Web search failed: SERPER_API_KEY is not configured."
 
     try:
-        response = requests.get(
-            "https://api.duckduckgo.com/",
-            params={
+        response = requests.post(
+            "https://google.serper.dev/search",
+            headers={
+                "X-API-KEY": api_key,
+                "Content-Type": "application/json",
+            },
+            json={
                 "q": query,
-                "format": "json",
-                "no_html": "1",
-                "skip_disambig": "1",
+                "num": max_results,
             },
             timeout=timeout_seconds,
         )
@@ -57,54 +55,33 @@ def web_search(query: str, max_results: int = 5, timeout_seconds: int = 10) -> s
         return f"Web search failed: {exc}"
 
     lines: List[str] = [f"Web search results for: {query}"]
+    organic = payload.get("organic", []) if isinstance(payload, dict) else []
 
-    abstract = _safe_get(payload, ["AbstractText"], "")
-    abstract_url = _safe_get(payload, ["AbstractURL"], "")
-    heading = _safe_get(payload, ["Heading"], "")
-
-    if abstract:
-        title = heading or "Top Result"
-        lines.append(f"1. {title}")
-        lines.append(f"   Summary: {abstract}")
-        if abstract_url:
-            lines.append(f"   URL: {abstract_url}")
-
-    related = _safe_get(payload, ["RelatedTopics"], []) or []
-    count = 1 if abstract else 0
-
-    def _append_topic(topic: Dict[str, Any]) -> bool:
-        nonlocal count
-        if count >= max_results:
-            return False
-        text = topic.get("Text")
-        url = topic.get("FirstURL")
-        if text and url:
-            count += 1
-            lines.append(f"{count}. {text}")
-            lines.append(f"   URL: {url}")
-            return True
-        return False
-
-    for item in related:
+    count = 0
+    citations: List[str] = []
+    for item in organic:
         if count >= max_results:
             break
-        if isinstance(item, dict) and "Topics" in item:
-            for sub in item.get("Topics", []):
-                if count >= max_results:
-                    break
-                if isinstance(sub, dict):
-                    _append_topic(sub)
-        elif isinstance(item, dict):
-            _append_topic(item)
-
-    if count == 0:
-        answer = _safe_get(payload, ["Answer"], "") or _safe_get(payload, ["Definition"], "")
-        if answer:
-            lines.append(f"1. {answer}")
-            count = 1
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "")).strip()
+        link = str(item.get("link", "")).strip()
+        snippet = str(item.get("snippet", "")).strip()
+        if not (title or link or snippet):
+            continue
+        count += 1
+        lines.append(f"[{count}] {title or 'Untitled'}")
+        if snippet:
+            lines.append(f"   Summary: {snippet} [source: {count}]")
+        if link:
+            lines.append(f"   URL: {link}")
+            citations.append(f"[{count}] {link}")
 
     if count == 0:
         lines.append("No web results found.")
+    else:
+        lines.append("")
+        lines.append(f"Citations (top {count}):")
+        lines.extend(citations)
 
     return "\n".join(lines)
-
