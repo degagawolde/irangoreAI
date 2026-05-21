@@ -1,0 +1,1 @@
+from app.models.query_log import QueryLog

@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+pydantic-settings
+sqlalchemy
+asyncpg
+psycopg2-binary
+pymupdf
+chromadb
+httpx
+python-multipart
