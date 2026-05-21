@@ -6,6 +6,7 @@ sqlalchemy
 asyncpg
 psycopg2-binary
 pymupdf
-chromadb
+elasticsearch[async]
+google-genai
 httpx
 python-multipart

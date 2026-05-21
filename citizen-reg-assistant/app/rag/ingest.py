@@ -1,14 +1,8 @@
 import asyncio
-import json
-from pathlib import Path
 from app.rag.retriever import ingest_legal_document
-
-# ─── Seed Data: Ethiopian Laws ────────────────────────────────────────────────
-# Each entry = one chunk. In production you'd parse PDFs/docs automatically.
-# For now we seed with key Ethiopian proclamations manually.
+from app.rag.elastic_store import create_index
 
 ETHIOPIAN_LAWS = [
-    # ── Land Lease ──────────────────────────────────────────────────────────
     {
         "id": "lease_proc_721_2011_art1",
         "source": "Proclamation No. 721/2011 – Urban Lands Lease Holding",
@@ -59,8 +53,6 @@ ETHIOPIAN_LAWS = [
             "or the lease period expires without renewal."
         )
     },
-
-    # ── Labour Law ──────────────────────────────────────────────────────────
     {
         "id": "labour_proc_1156_2019_art13",
         "source": "Labour Proclamation No. 1156/2019",
@@ -95,14 +87,11 @@ ETHIOPIAN_LAWS = [
         "article": "Article 39 – Severance Pay",
         "text": (
             "An employee whose contract is terminated is entitled to severance pay "
-            "calculated as: 30 days' wages for the first year of service, and 10 days' "
+            "calculated as: 30 days wages for the first year of service, and 10 days "
             "wages for each subsequent year. Severance pay does not apply where the "
-            "employee is terminated for serious disciplinary offence or voluntarily "
-            "resigns."
+            "employee is terminated for serious disciplinary offence or voluntarily resigns."
         )
     },
-
-    # ── Commercial Registration ─────────────────────────────────────────────
     {
         "id": "comm_reg_proc_980_2016_art4",
         "source": "Commercial Registration and Business Licensing Proclamation No. 980/2016",
@@ -123,12 +112,10 @@ ETHIOPIAN_LAWS = [
         "text": (
             "A private limited company (PLC) must have a minimum of 2 and maximum of 50 "
             "shareholders. The minimum capital is ETB 15,000. The company name must end "
-            "with 'PLC'. Transfer of shares is restricted and requires consent of other "
+            "with PLC. Transfer of shares is restricted and requires consent of other "
             "shareholders. A PLC must maintain audited financial records annually."
         )
     },
-
-    # ── Tenant / Rental ──────────────────────────────────────────────────────
     {
         "id": "rent_proc_addis_art7",
         "source": "Addis Ababa City Administration House Rent Regulation",
@@ -155,8 +142,6 @@ ETHIOPIAN_LAWS = [
             "housing authority."
         )
     },
-
-    # ── Investment ───────────────────────────────────────────────────────────
     {
         "id": "invest_proc_1180_2020_art3",
         "source": "Investment Proclamation No. 1180/2020",
@@ -164,8 +149,7 @@ ETHIOPIAN_LAWS = [
         "article": "Article 3 – Areas Reserved for Ethiopian Nationals",
         "text": (
             "The following sectors are reserved exclusively for Ethiopian investors: "
-            "retail and wholesale trade; import and export trade (excluding certain "
-            "categories); transport services (excluding air and sea transport); "
+            "retail and wholesale trade; import and export trade; transport services; "
             "broadcasting; small-scale mining; legal and notarial services. Foreign "
             "investors may not engage in these reserved sectors."
         )
@@ -177,7 +161,7 @@ ETHIOPIAN_LAWS = [
         "article": "Article 15 – Investment Incentives",
         "text": (
             "Registered investors in priority sectors are entitled to: income tax "
-            "exemption for 2–7 years depending on sector and location; duty-free "
+            "exemption for 2-7 years depending on sector and location; duty-free "
             "importation of capital goods and construction materials; loss carry-forward "
             "for the duration of the tax holiday; and export tax exemption. "
             "Priority sectors include manufacturing, agriculture, and ICT."
@@ -187,10 +171,13 @@ ETHIOPIAN_LAWS = [
 
 
 async def ingest_all():
-    print(f"Starting ingestion of {len(ETHIOPIAN_LAWS)} legal document chunks...\n")
+    print("[ES] Creating index if not exists...")
+    await create_index()
+
+    print(f"\nStarting ingestion of {len(ETHIOPIAN_LAWS)} legal document chunks...\n")
 
     success = 0
-    failed = 0
+    failed  = 0
 
     for i, law in enumerate(ETHIOPIAN_LAWS, 1):
         try:
@@ -209,7 +196,6 @@ async def ingest_all():
 
     print(f"\n{'─'*60}")
     print(f"Ingestion complete: {success} succeeded, {failed} failed")
-    print(f"ChromaDB stored at: ./chroma_db")
 
 
 if __name__ == "__main__":

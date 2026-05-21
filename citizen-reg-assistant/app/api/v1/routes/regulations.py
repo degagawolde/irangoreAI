@@ -1,23 +1,17 @@
+import json
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select, desc
-from app.api.v1.schemas.regulation import (
-    RegulationQueryRequest,
-    RegulationQueryResponse
-)
+from app.api.v1.schemas.regulation import RegulationQueryRequest, RegulationQueryResponse
 from app.api.v1.services.regulation_service import answer_regulation_query
 from app.api.dependencies import DBSession
 from app.models.query_log import QueryLog
-import json
 
 router = APIRouter(prefix="/regulations", tags=["Regulations"])
 
 
 @router.post("/ask", response_model=RegulationQueryResponse)
 async def ask_regulation(request: RegulationQueryRequest, db: DBSession):
-    """
-    Ask a legal question in any language — Amharic, Oromiffa,
-    Tigrinya, or English. Answer is returned in the same language.
-    """
+    """Ask a legal question in any language."""
     try:
         return await answer_regulation_query(
             question=request.question,
@@ -30,14 +24,13 @@ async def ask_regulation(request: RegulationQueryRequest, db: DBSession):
 
 @router.get("/history")
 async def get_query_history(db: DBSession, limit: int = 20):
-    """Return the last N questions asked to the system."""
+    """Return the last N questions asked."""
     result = await db.execute(
         select(QueryLog)
         .order_by(desc(QueryLog.created_at))
         .limit(limit)
     )
     logs = result.scalars().all()
-
     return [
         {
             "id":           log.id,

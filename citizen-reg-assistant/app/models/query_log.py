@@ -9,5 +9,5 @@ class QueryLog(Base):
     question     = Column(Text, nullable=False)
     jurisdiction = Column(String(100), default="Ethiopia")
     answer       = Column(Text)
-    sources      = Column(Text)          # stored as JSON string
+    sources      = Column(Text)
     created_at   = Column(DateTime(timezone=True), server_default=func.now())

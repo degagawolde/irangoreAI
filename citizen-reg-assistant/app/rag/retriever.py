@@ -1,5 +1,5 @@
 from app.rag.embeddings import get_embedding, get_embedding_for_document
-from app.rag.vector_store import get_collection
+from app.rag.elastic_store import hybrid_search, index_document
 
 
 async def retrieve_relevant_laws(
@@ -8,40 +8,16 @@ async def retrieve_relevant_laws(
     n_results: int = 5
 ) -> list[dict]:
     """
-    Retrieve most relevant legal documents for a query.
-    Gemini text-embedding-004 handles Amharic, Oromiffa,
-    Tigrinya natively — no translation needed.
+    Hybrid search — BM25 + semantic vector via Elasticsearch RRF.
+    Works natively with Amharic, Oromiffa, Tigrinya, and English.
     """
-    collection = get_collection()
-
-    # Gemini embeddings are multilingual — embed query as-is
     query_embedding = await get_embedding(query)
-
-    where_filter = {"jurisdiction": jurisdiction} if jurisdiction else None
-
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=n_results,
-        where=where_filter,
-        include=["documents", "metadatas", "distances"]
+    return await hybrid_search(
+        query_text=query,
+        query_embedding=query_embedding,
+        jurisdiction=jurisdiction,
+        n_results=n_results
     )
-
-    retrieved = []
-    if results and results["documents"]:
-        for doc, meta, dist in zip(
-            results["documents"][0],
-            results["metadatas"][0],
-            results["distances"][0]
-        ):
-            retrieved.append({
-                "text":         doc,
-                "source":       meta.get("source", "Unknown"),
-                "jurisdiction": meta.get("jurisdiction", jurisdiction),
-                "article":      meta.get("article", ""),
-                "distance":     dist
-            })
-
-    return retrieved
 
 
 async def ingest_legal_document(
@@ -49,19 +25,17 @@ async def ingest_legal_document(
     source: str,
     jurisdiction: str,
     article: str = "",
-    doc_id: str = None
+    doc_id: str = None,
+    page: int = 0
 ):
-    """Add a legal document chunk to the vector store."""
-    collection = get_collection()
+    """Embed and index a legal document chunk into Elasticsearch."""
     embedding = await get_embedding_for_document(text)
-
-    collection.add(
-        ids=[doc_id or f"{source}_{article}_{hash(text)}"],
-        embeddings=[embedding],
-        documents=[text],
-        metadatas=[{
-            "source":       source,
-            "jurisdiction": jurisdiction,
-            "article":      article
-        }]
+    await index_document(
+        doc_id=doc_id or f"{source}_{article}_{hash(text)}",
+        text=text,
+        embedding=embedding,
+        source=source,
+        jurisdiction=jurisdiction,
+        article=article,
+        page=page
     )

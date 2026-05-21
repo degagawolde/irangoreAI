@@ -1,10 +1,10 @@
 import json
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.rag.retriever import retrieve_relevant_laws
 from app.api.v1.services.llm_service import chat
 from app.api.v1.schemas.regulation import RegulationQueryResponse, CitedSource
 from app.core.prompts import REGULATION_SYSTEM_PROMPT, JURISDICTION_CONTEXT
 from app.models.query_log import QueryLog
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def answer_regulation_query(
@@ -13,7 +13,7 @@ async def answer_regulation_query(
     db: AsyncSession = None
 ) -> RegulationQueryResponse:
 
-    # 1. Retrieve relevant laws
+    # 1. Hybrid search — BM25 + semantic
     retrieved_docs = await retrieve_relevant_laws(
         query=question,
         jurisdiction=jurisdiction,
@@ -33,7 +33,10 @@ async def answer_regulation_query(
     else:
         jurisdiction_ctx = JURISDICTION_CONTEXT.format(
             jurisdiction=jurisdiction,
-            legal_framework="No specific regulation found in database. Answer based on general knowledge but be explicit about this limitation."
+            legal_framework=(
+                "No specific regulation found in database. "
+                "Answer based on general knowledge but be explicit about this limitation."
+            )
         )
 
     # 3. Call LLM
@@ -66,7 +69,7 @@ async def answer_regulation_query(
         jurisdiction=jurisdiction
     )
 
-    # 5. Log to Postgres (non-blocking — don't fail the request if DB is down)
+    # 5. Log to Postgres
     if db:
         try:
             log = QueryLog(

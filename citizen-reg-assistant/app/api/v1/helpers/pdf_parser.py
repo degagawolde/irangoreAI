@@ -12,12 +12,11 @@ class DocumentChunk:
 
 def extract_text_by_page(file_bytes: bytes) -> list[tuple[int, str]]:
     doc = fitz.open(stream=file_bytes, filetype="pdf")
-    pages = []
-    for i, page in enumerate(doc, 1):
-        text = page.get_text().strip()
-        if text:
-            pages.append((i, text))
-    return pages
+    return [
+        (i + 1, page.get_text().strip())
+        for i, page in enumerate(doc)
+        if page.get_text().strip()
+    ]
 
 
 def chunk_text(
@@ -42,10 +41,10 @@ def chunk_text(
             if boundary > start + (chunk_size // 2):
                 end = boundary + 1
 
-        chunk_text_str = text[start:end].strip()
-        if chunk_text_str:
+        chunk_str = text[start:end].strip()
+        if chunk_str:
             chunks.append(DocumentChunk(
-                text=chunk_text_str,
+                text=chunk_str,
                 page=page,
                 chunk_index=idx
             ))
@@ -60,14 +59,10 @@ def parse_pdf_into_chunks(
     chunk_size: int = 600,
     overlap: int = 100
 ) -> list[DocumentChunk]:
-    pages      = extract_text_by_page(file_bytes)
     all_chunks = []
-    for page_num, page_text in pages:
-        chunks = chunk_text(
-            page_text,
-            page=page_num,
-            chunk_size=chunk_size,
-            overlap=overlap
+    for page_num, page_text in extract_text_by_page(file_bytes):
+        all_chunks.extend(
+            chunk_text(page_text, page=page_num,
+                       chunk_size=chunk_size, overlap=overlap)
         )
-        all_chunks.extend(chunks)
     return all_chunks

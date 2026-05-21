@@ -52,7 +52,6 @@ def get_document_risk_prompt(contract_type: str, language: str = "English") -> s
         - Missing clause for construction violations
         - Compliance with Proclamation No. 721/2011 Urban Lands Lease Holding
         """,
-
         "car sale": """
         Pay special attention to:
         - Chassis/VIN number matches registration documents
@@ -65,7 +64,6 @@ def get_document_risk_prompt(contract_type: str, language: str = "English") -> s
         - Import duty status for foreign vehicles
         - Ethiopian road transport authority registration requirements
         """,
-
         "lease agreement": """
         Pay special attention to:
         - Rent increase clauses — frequency and percentage cap
@@ -78,7 +76,6 @@ def get_document_risk_prompt(contract_type: str, language: str = "English") -> s
         - Utility payment responsibilities
         - Compliance with Addis Ababa House Rent Regulation
         """,
-
         "employment": """
         Pay special attention to:
         - Probation period (Ethiopian law max: 60 working days)
@@ -90,7 +87,6 @@ def get_document_risk_prompt(contract_type: str, language: str = "English") -> s
         - Dispute resolution mechanism
         - Pension and social security contributions
         """,
-
         "loan agreement": """
         Pay special attention to:
         - Interest rate — fixed vs variable and maximum cap
@@ -102,7 +98,6 @@ def get_document_risk_prompt(contract_type: str, language: str = "English") -> s
         - Cross-default clauses
         - Compliance with National Bank of Ethiopia directives
         """,
-
         "business partnership": """
         Pay special attention to:
         - Profit and loss sharing ratio
@@ -153,7 +148,7 @@ Return this exact JSON structure:
   "missing_clauses": ["important clause that is absent", "..."],
   "risks": [
     {{
-      "clause": "exact risky clause text, or 'MISSING' if absent",
+      "clause": "exact risky clause text, or MISSING if absent",
       "risk_level": "HIGH|MEDIUM|LOW",
       "explanation": "plain language explanation in {language}",
       "recommendation": "what the user should do or negotiate in {language}"

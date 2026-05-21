@@ -5,7 +5,7 @@ from typing import Optional
 class RegulationQueryRequest(BaseModel):
     question: str
     jurisdiction: str = "Ethiopia"
-    context: Optional[str] = None   # optional extra context from user
+    context: Optional[str] = None
 
     model_config = {
         "json_schema_extra": {
@@ -27,4 +27,7 @@ class RegulationQueryResponse(BaseModel):
     answer: str
     sources: list[CitedSource]
     jurisdiction: str
-    disclaimer: str = "This is legal information only, not legal advice. Consult a qualified attorney for your specific situation."
+    disclaimer: str = (
+        "This is legal information only, not legal advice. "
+        "Consult a qualified attorney for your specific situation."
+    )

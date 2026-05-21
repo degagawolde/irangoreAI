@@ -17,13 +17,10 @@ class IngestResponse(BaseModel):
 @router.post("/pdf", response_model=IngestResponse)
 async def ingest_pdf(
     file: UploadFile = File(...),
-    source: str = Form(...),        # e.g. "Proclamation No. 1180/2020"
+    source: str = Form(...),
     jurisdiction: str = Form(default="Ethiopia"),
 ):
-    """
-    Upload a PDF proclamation or legal document.
-    It will be chunked and embedded into the vector store automatically.
-    """
+    """Upload a PDF proclamation — auto chunked and indexed into Elasticsearch."""
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
 
@@ -32,25 +29,23 @@ async def ingest_pdf(
     if len(file_bytes) > 20 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Max 20MB.")
 
-    # Parse into chunks
     chunks = parse_pdf_into_chunks(file_bytes, chunk_size=600, overlap=100)
 
     if not chunks:
         raise HTTPException(status_code=422, detail="Could not extract text from PDF.")
 
-    # Embed and store each chunk
     ingested = 0
-    errors = 0
+    errors   = 0
 
     for chunk in chunks:
         try:
-            doc_id = f"{source}_p{chunk.page}_c{chunk.chunk_index}"
             await ingest_legal_document(
                 text=chunk.text,
                 source=source,
                 jurisdiction=jurisdiction,
                 article=f"Page {chunk.page}",
-                doc_id=doc_id
+                doc_id=f"{source}_p{chunk.page}_c{chunk.chunk_index}",
+                page=chunk.page
             )
             ingested += 1
         except Exception:

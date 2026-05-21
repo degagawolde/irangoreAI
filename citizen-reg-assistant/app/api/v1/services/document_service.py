@@ -13,7 +13,6 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 
 
 async def detect_contract_type(text: str) -> str:
-    """Ask Gemini to identify the contract type."""
     messages = [
         {
             "role": "user",
@@ -41,7 +40,7 @@ async def analyze_document_risks(
     if not text:
         raise ValueError("Could not extract text from the uploaded document.")
 
-    # 2. Auto-detect language of the contract
+    # 2. Auto-detect language
     detected_language = await detect_language(text)
     print(f"[DOC] Detected language: {detected_language}")
 
@@ -54,17 +53,17 @@ async def analyze_document_risks(
     if len(text) > max_chars:
         text = text[:max_chars] + "\n\n[Document truncated]"
 
-    # 5. Get type-specific + language-aware prompt
+    # 5. Get type + language aware prompt
     system_prompt = get_document_risk_prompt(contract_type, detected_language)
 
-    # 6. Call Gemini in JSON mode
+    # 6. Call LLM in JSON mode
     messages = [
         {
             "role": "user",
             "content": (
                 f"Analyze this {contract_type} contract for risks.\n"
                 f"The contract is written in {detected_language}.\n"
-                f"Your response must be entirely in {detected_language}.\n\n"
+                f"Your full response must be in {detected_language}.\n\n"
                 f"{text}"
             )
         }
