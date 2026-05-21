@@ -14,3 +14,4 @@ __pycache__/
 
 # files
 _filesapp/
+citizen-reg-assistant/chroma_db/
