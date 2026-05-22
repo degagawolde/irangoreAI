@@ -8,8 +8,11 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # Provider switches
-    LLM_PROVIDER: Literal["gemini", "ollama"] = "gemini"
-    EMBED_PROVIDER: Literal["gemini", "ollama"] = "gemini"
+    LLM_PROVIDER: Literal["gemini", "ollama"] = "ollama"
+    EMBED_PROVIDER: Literal["gemini", "ollama"] = "ollama"
+
+    # OCR always uses Gemini — independent of LLM_PROVIDER
+    OCR_PROVIDER: Literal["gemini"] = "gemini"
 
     # Gemini
     GEMINI_API_KEY: str = ""
@@ -24,7 +27,7 @@ class Settings(BaseSettings):
     # Elasticsearch
     ES_URL: str = "http://localhost:9200"
     ES_INDEX: str = "legal_documents"
-    ES_VECTOR_DIMS: int = 3072
+    ES_VECTOR_DIMS: int = 768
 
     # Database
     DATABASE_URL: str

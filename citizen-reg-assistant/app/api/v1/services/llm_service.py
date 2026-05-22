@@ -78,13 +78,13 @@ async def _chat_json_gemini(
         config=config
     )
 
-    print(f"[LLM-GEMINI] Response length: {len(response.text)} chars")
+    print(f"[LLM-GEMINI] Response: {len(response.text):,} chars")
 
     try:
         return json.loads(response.text)
     except json.JSONDecodeError as e:
         print(f"[LLM-GEMINI] JSON parse failed: {e}")
-        print(f"[LLM-GEMINI] Raw response: {response.text[:500]}")
+        print(f"[LLM-GEMINI] Raw (first 500): {response.text[:500]}")
         clean = re.sub(r"```json|```", "", response.text).strip()
         try:
             return json.loads(clean)
@@ -109,8 +109,8 @@ async def _chat_ollama(
         "messages": messages,
         "stream":   False,
         "options":  {
-            "temperature":  temperature,
-            "num_ctx":      8192,   # context window
+            "temperature": temperature,
+            "num_ctx":     8192,
         }
     }
     if system_prompt:
@@ -157,22 +157,20 @@ async def _chat_json_ollama(
         response.raise_for_status()
         content = response.json()["message"]["content"]
 
-    print(f"[LLM-OLLAMA] Response length: {len(content)} chars")
-    print(f"[LLM-OLLAMA] First 300 chars: {content[:300]}")
+    print(f"[LLM-OLLAMA] Response: {len(content):,} chars")
+    print(f"[LLM-OLLAMA] First 300: {content[:300]}")
 
     try:
         return json.loads(content)
     except json.JSONDecodeError as e:
         print(f"[LLM-OLLAMA] JSON parse failed: {e}")
         print(f"[LLM-OLLAMA] Full response: {content[:1000]}")
-        # Try extracting JSON block
         match = re.search(r'\{.*\}', content, re.DOTALL)
         if match:
             try:
                 return json.loads(match.group())
             except json.JSONDecodeError:
                 pass
-        # Try cleaning markdown fences
         clean = re.sub(r"```json|```", "", content).strip()
         try:
             return json.loads(clean)

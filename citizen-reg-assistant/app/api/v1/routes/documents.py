@@ -1,13 +1,9 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.api.v1.schemas.document import ContractAnalysisResponse
 from app.api.v1.services.document_service import analyze_contract
+from app.api.v1.helpers.pdf_parser import SUPPORTED_EXTENSIONS
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
-
-ALLOWED_TYPES = {
-    "application/pdf",
-    "application/octet-stream"
-}
 
 
 @router.post(
@@ -15,29 +11,38 @@ ALLOWED_TYPES = {
     response_model=ContractAnalysisResponse,
     summary="Analyze a contract",
     description=(
-        "Upload a contract PDF in English, Amharic, or Afaan Oromo. "
-        "The system auto-detects the language and contract type, then returns "
-        "a full structured analysis including obligations, restrictions, "
-        "consequences, risks, and missing clauses — all in the contract's language."
+        "Upload a contract as PDF, scanned PDF, screenshot, or photo. "
+        "Supported formats: PDF, JPG, PNG, WEBP, GIF, BMP. "
+        "The system auto-detects language (English, Amharic, Oromiffa) "
+        "and contract type, then returns full structured analysis."
     )
 )
 async def analyze_document(file: UploadFile = File(...)):
-    # Validate file type
-    if not file.filename.lower().endswith(".pdf"):
+
+    # Validate file extension
+    filename  = file.filename or "document"
+    ext       = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    if ext not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail="Only PDF files are supported. Please upload a .pdf file."
+            detail=(
+                f"Unsupported file type '{ext}'. "
+                f"Supported formats: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+            )
         )
 
-    # Validate file size (max 20MB)
+    # Read file
     file_bytes = await file.read()
+
+    # Validate size (50MB max)
     if len(file_bytes) > 50 * 1024 * 1024:
         raise HTTPException(
             status_code=400,
             detail="File too large. Maximum size is 50MB."
-            
         )
 
+    # Validate not empty
     if len(file_bytes) < 100:
         raise HTTPException(
             status_code=400,
@@ -45,11 +50,11 @@ async def analyze_document(file: UploadFile = File(...)):
         )
 
     try:
-        return await analyze_contract(file_bytes, file.filename)
+        return await analyze_contract(file_bytes, filename)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        print(f"[ERROR] Contract analysis failed: {e}")
+        print(f"[ERROR] Contract analysis failed: {type(e).__name__}: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Analysis failed: {str(e)}"

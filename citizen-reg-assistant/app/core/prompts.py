@@ -58,7 +58,6 @@ def get_contract_analysis_prompt(
         - Seller's warranties about the property condition
         - Compliance with Proclamation No. 721/2011
         """,
-
         "car sale": """
         Focus on:
         - Vehicle identification (VIN/chassis) and registration match
@@ -71,7 +70,6 @@ def get_contract_analysis_prompt(
         - Payment terms and ownership transfer trigger
         - Road transport authority re-registration requirements
         """,
-
         "lease agreement": """
         Focus on:
         - Monthly/annual rent amount and payment due date
@@ -86,7 +84,18 @@ def get_contract_analysis_prompt(
         - Permitted use of the property
         - Compliance with Addis Ababa House Rent Regulation
         """,
-
+        "rental handbook": """
+        Focus on:
+        - Tenant rights and landlord obligations
+        - Rent payment rules and late payment consequences
+        - Eviction procedures and required notice periods
+        - Security deposit rules and return conditions
+        - Maintenance and repair responsibilities
+        - Prohibited activities and restrictions
+        - Renewal and termination procedures
+        - Dispute resolution mechanisms
+        - Legal protections for tenants under Ethiopian law
+        """,
         "employment": """
         Focus on:
         - Job title, duties, and work location
@@ -101,7 +110,6 @@ def get_contract_analysis_prompt(
         - Pension and social security contributions
         - Grievance and dispute resolution process
         """,
-
         "loan agreement": """
         Focus on:
         - Principal amount, interest rate (fixed or variable)
@@ -115,7 +123,6 @@ def get_contract_analysis_prompt(
         - Guarantor obligations and liability
         - National Bank of Ethiopia lending rate compliance
         """,
-
         "business partnership": """
         Focus on:
         - Each partner's capital contribution and percentage
@@ -130,7 +137,6 @@ def get_contract_analysis_prompt(
         - Dissolution triggers and asset distribution
         - Ethiopian Commercial Code compliance
         """,
-
         "service agreement": """
         Focus on:
         - Exact scope of services — what is and isn't included
@@ -144,7 +150,6 @@ def get_contract_analysis_prompt(
         - Termination for convenience terms
         - Dispute resolution and governing law
         """,
-
         "supply agreement": """
         Focus on:
         - Product specifications and quality standards
@@ -166,7 +171,7 @@ def get_contract_analysis_prompt(
 
     return f"""
 You are an expert contract analyst specializing in Ethiopian law.
-You are analyzing a {contract_type} contract written in {language}.
+You are analyzing a {contract_type} document written in {language}.
 
 LANGUAGE RULE — CRITICAL:
 - Your ENTIRE response must be in {language}
@@ -177,72 +182,75 @@ LANGUAGE RULE — CRITICAL:
 YOUR ANALYSIS MUST COVER ALL OF THE FOLLOWING:
 
 1. CONTRACT TYPE — confirm or correct the detected type
-2. SUMMARY — what this contract does in 3-4 sentences
+2. SUMMARY — what this document does in 3-4 sentences
 3. PARTIES — who are the parties, their roles, and their main obligations
 4. OBLIGATIONS — what each party MUST do
 5. LIMITATIONS AND RESTRICTIONS — what each party CANNOT do
-6. REQUIREMENTS — conditions that must be met for the contract to be valid or enforceable
-7. CONSEQUENCES — what happens if a party violates, refuses, or fails to perform
+6. REQUIREMENTS — conditions that must be met
+7. CONSEQUENCES — what happens if a party violates or refuses to perform
 8. IMPORTANT CONDITIONS — key dates, amounts, deadlines, special terms
 9. MISSING CLAUSES — important protections that are absent
-10. RISKS — specific risky clauses with severity rating
+10. RISKS — specific risky clauses with severity AND issue category
 
 {guidance}
 
+ISSUE CATEGORIES — assign exactly one to each risk:
+- "Timeline Violation"      → missed deadlines, late delivery, expired terms
+- "Transfer Restriction"    → limits on transferring rights, property, or obligations
+- "Financial Penalty"       → fines, interest, fees, forfeitures for non-compliance
+- "Termination Liability"   → consequences of ending the contract early or wrongfully
+- "Ambiguous Language"      → vague, unclear, or undefined terms that create uncertainty
+- "Missing Clause"          → important protection that is completely absent
+- "Unfair Terms"            → one-sided clauses that heavily favor one party
+- "Legal Non-Compliance"    → violates Ethiopian law or regulation
+- "Payment Obligation"      → unclear or risky payment terms
+- "Dispute Resolution"      → missing or inadequate conflict resolution mechanism
+- "Confidentiality Breach"  → risk of exposing sensitive information
+- "Intellectual Property"   → unclear ownership of created work
+- "Force Majeure"           → missing or inadequate force majeure protection
+- "Other"                   → does not fit above categories
+
 STRICT RULES:
-- Read the contract carefully — extract exact numbers, amounts, dates
-- Flag MISSING clauses as HIGH risk — absence of protection is a risk
+- Read carefully — extract exact numbers, amounts, dates
+- Flag MISSING clauses as HIGH risk
 - Never tell user to sign or not sign
 - This is legal information only, never legal advice
-- Return ONLY valid JSON — no markdown, no extra text outside JSON
+- Return ONLY valid JSON — no markdown, no text outside JSON
+- Every field value must be in {language}
 
-Return ONLY this exact JSON structure with ALL fields in {language}:
+Return ONLY this exact JSON:
 {{
-  "contract_type": "confirmed contract type in {language}",
+  "contract_type": "document type in {language}",
   "summary": "3-4 sentence overview in {language}",
   "parties": [
     {{
-      "name": "party name or role",
-      "role": "buyer/seller/employer/tenant/etc in {language}",
-      "obligations": ["obligation 1 in {language}", "obligation 2 in {language}"]
+      "name": "party name",
+      "role": "role in {language}",
+      "obligations": ["obligation in {language}"]
     }}
   ],
-  "obligations": [
-    "Clear obligation statement in {language}",
-    "..."
-  ],
-  "limitations_and_restrictions": [
-    "What is prohibited or restricted in {language}",
-    "..."
-  ],
-  "requirements": [
-    "Condition that must be met in {language}",
-    "..."
-  ],
+  "obligations": ["obligation in {language}"],
+  "limitations_and_restrictions": ["restriction in {language}"],
+  "requirements": ["requirement in {language}"],
   "consequences": [
     {{
-      "trigger": "what causes this consequence in {language}",
-      "consequence": "what happens as a result in {language}",
+      "trigger": "what causes this in {language}",
+      "consequence": "what happens in {language}",
       "severity": "HIGH|MEDIUM|LOW"
     }}
   ],
-  "important_conditions": [
-    "Key date, amount, deadline, or special term in {language}",
-    "..."
-  ],
-  "missing_clauses": [
-    "Important protection that is absent in {language}",
-    "..."
-  ],
+  "important_conditions": ["condition in {language}"],
+  "missing_clauses": ["missing protection in {language}"],
   "risks": [
     {{
       "clause": "exact clause text or MISSING",
       "risk_level": "HIGH|MEDIUM|LOW",
+      "issue_category": "one category from the list above in English",
       "explanation": "why this is risky in {language}",
-      "recommendation": "what to do or negotiate in {language}"
+      "recommendation": "what to do in {language}"
     }}
   ],
   "overall_risk_level": "HIGH|MEDIUM|LOW",
-  "disclaimer": "legal information disclaimer in {language}"
+  "disclaimer": "disclaimer in {language}"
 }}
 """

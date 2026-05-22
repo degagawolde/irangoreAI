@@ -1,90 +1,19 @@
 import re
-import fitz
 from app.core.config import settings
 from app.api.v1.services.llm_service import chat, chat_json, detect_language
+from app.api.v1.helpers.pdf_parser import (
+    extract_text_with_ocr_fallback,
+    smart_truncate
+)
 from app.api.v1.schemas.document import (
     ContractAnalysisResponse,
     Party,
     Consequence,
-    RiskItem
+    RiskItem,
+    IssueCategorySummary,
+    ISSUE_CATEGORIES
 )
 from app.core.prompts import get_contract_analysis_prompt
-
-
-# ── PDF Extraction ────────────────────────────────────────────────────────────
-
-def extract_text_from_pdf(file_bytes: bytes) -> tuple[str, int]:
-    """
-    Extract all text from PDF.
-    Returns (full_text, total_pages).
-    """
-    doc        = fitz.open(stream=file_bytes, filetype="pdf")
-    pages_text = []
-
-    for page in doc:
-        text = page.get_text().strip()
-        if text:
-            pages_text.append(text)
-
-    return "\n\n".join(pages_text), len(pages_text)
-
-
-def smart_truncate(
-    text: str,
-    total_pages: int,
-    max_chars: int = 12000
-) -> tuple[str, str]:
-    """
-    Smart truncation for large legal documents.
-
-    Strategy by document size:
-    - Small  (≤ max_chars)       → full text, no truncation
-    - Medium (≤ 2x max_chars)    → first 60% + last 40%
-    - Large  (> 2x max_chars)    → first 40% + middle 35% + last 25%
-
-    Returns (truncated_text, truncation_note)
-    """
-    total_chars = len(text)
-
-    # Small — no truncation needed
-    if total_chars <= max_chars:
-        return text, ""
-
-    # Medium document
-    if total_chars <= max_chars * 2:
-        first     = int(max_chars * 0.60)
-        last      = max_chars - first
-        truncated = (
-            text[:first]
-            + "\n\n[... middle section not analyzed ...]\n\n"
-            + text[-last:]
-        )
-        note = (
-            f"Document has {total_chars:,} chars (~{total_pages} pages). "
-            f"Analyzed first and last sections."
-        )
-        return truncated, note
-
-    # Large document — 3 sections
-    first_end    = int(max_chars * 0.40)
-    middle_size  = int(max_chars * 0.35)
-    last_size    = int(max_chars * 0.25)
-
-    mid_start = (total_chars // 2) - (middle_size // 2)
-    mid_end   = mid_start + middle_size
-
-    truncated = (
-        text[:first_end]
-        + "\n\n[... section 1 ends — section 2 begins ...]\n\n"
-        + text[mid_start:mid_end]
-        + "\n\n[... section 2 ends — final section begins ...]\n\n"
-        + text[-last_size:]
-    )
-    note = (
-        f"Large document: {total_chars:,} chars across ~{total_pages} pages. "
-        f"Analyzed beginning (40%), middle sample (35%), and end (25%)."
-    )
-    return truncated, note
 
 
 # ── Detection ─────────────────────────────────────────────────────────────────
@@ -108,7 +37,7 @@ async def detect_contract_type(text: str, language: str) -> str:
                 "- supply agreement\n"
                 "- rental handbook\n"
                 "- tenancy agreement\n"
-                "If none match exactly, describe briefly in English.\n"
+                "If none match, describe briefly in English.\n"
                 "Return ONLY the document type, nothing else.\n\n"
                 f"{text[:3000]}"
             )
@@ -130,6 +59,30 @@ def _safe_str(val) -> str:
 
 def _safe_list(val) -> list:
     return val if isinstance(val, list) else []
+
+
+def _normalize_category(raw: str) -> str:
+    """Match raw LLM category to known categories. Fallback to Other."""
+    if not raw:
+        return "Other"
+    raw_clean = raw.strip()
+
+    # Exact match
+    if raw_clean in ISSUE_CATEGORIES:
+        return raw_clean
+
+    # Case-insensitive match
+    for cat in ISSUE_CATEGORIES:
+        if cat.lower() == raw_clean.lower():
+            return cat
+
+    # Partial match
+    for cat in ISSUE_CATEGORIES:
+        if (cat.lower() in raw_clean.lower()
+                or raw_clean.lower() in cat.lower()):
+            return cat
+
+    return "Other"
 
 
 def _parse_parties(raw: list) -> list[Party]:
@@ -183,12 +136,47 @@ def _parse_risks(raw: list) -> list[RiskItem]:
             risks.append(RiskItem(
                 clause=_safe_str(r.get("clause", "")),
                 risk_level=level,
+                issue_category=_normalize_category(
+                    _safe_str(r.get("issue_category", "Other"))
+                ),
                 explanation=_safe_str(r.get("explanation", "")),
                 recommendation=_safe_str(r.get("recommendation", ""))
             ))
         except Exception as e:
             print(f"[CONTRACT] Risk parse error: {e}")
     return risks
+
+
+def _build_issue_summary(
+    risks: list[RiskItem]
+) -> list[IssueCategorySummary]:
+    """
+    Build a ranked summary of risk categories.
+    Sorted by severity then count.
+    """
+    category_map: dict[str, list[str]] = {}
+    for risk in risks:
+        cat = risk.issue_category
+        if cat not in category_map:
+            category_map[cat] = []
+        category_map[cat].append(risk.risk_level)
+
+    severity_order = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+
+    summary = []
+    for cat, levels in sorted(category_map.items()):
+        highest = max(levels, key=lambda x: severity_order.get(x, 0))
+        summary.append(IssueCategorySummary(
+            category=cat,
+            count=len(levels),
+            risk_level=highest
+        ))
+
+    summary.sort(
+        key=lambda x: (severity_order.get(x.risk_level, 0), x.count),
+        reverse=True
+    )
+    return summary
 
 
 # ── Main Analysis ─────────────────────────────────────────────────────────────
@@ -198,19 +186,20 @@ async def analyze_contract(
     filename: str,
 ) -> ContractAnalysisResponse:
 
-    # 1. Extract text
-    print(f"[CONTRACT] Extracting text from: {filename}")
-    full_text, total_pages = extract_text_from_pdf(file_bytes)
+    # 1. Extract text — OCR fallback for scanned PDFs
+    print(f"[CONTRACT] ── Starting analysis: {filename} ──")
+    full_text, total_pages, ocr_used = await extract_text_with_ocr_fallback(
+        file_bytes=file_bytes,
+        filename=filename
+    )
 
-    if not full_text or len(full_text.strip()) < 50:
-        raise ValueError(
-            "Could not extract text from the uploaded document. "
-            "Make sure the PDF contains selectable text and is not a scanned image."
-        )
+    print(
+        f"[CONTRACT] Extraction complete — "
+        f"{total_pages} pages | {len(full_text):,} chars | "
+        f"OCR: {ocr_used}"
+    )
 
-    print(f"[CONTRACT] Extracted: {total_pages} pages | {len(full_text):,} chars")
-
-    # 2. Detect language from beginning of document
+    # 2. Detect language
     print("[CONTRACT] Detecting language...")
     try:
         detected_language = await detect_language(full_text[:1000])
@@ -221,7 +210,9 @@ async def analyze_contract(
 
     # 3. Detect contract type
     print("[CONTRACT] Detecting contract type...")
-    contract_type = await detect_contract_type(full_text[:3000], detected_language)
+    contract_type = await detect_contract_type(
+        full_text[:3000], detected_language
+    )
     print(f"[CONTRACT] Type: {contract_type}")
 
     # 4. Smart truncation
@@ -235,27 +226,38 @@ async def analyze_contract(
     else:
         print(f"[CONTRACT] No truncation needed")
 
-    # 5. Build system prompt
-    system_prompt = get_contract_analysis_prompt(contract_type, detected_language)
+    # 5. Build prompt
+    system_prompt = get_contract_analysis_prompt(
+        contract_type, detected_language
+    )
 
     # 6. Build user message
-    user_content = "\n".join([
+    user_content = "\n".join(filter(None, [
         f"Analyze this {contract_type} document thoroughly.",
         f"Document language: {detected_language}",
-        f"Total pages in document: {total_pages}",
-        f"Truncation note: {truncation_note}" if truncation_note else "",
-        f"",
+        f"Total pages: {total_pages}",
+        f"OCR extraction was used: {ocr_used}",
+        f"Note: {truncation_note}" if truncation_note else "",
+        "",
         f"CRITICAL: Your ENTIRE response must be in {detected_language}.",
-        f"",
-        f"DOCUMENT TEXT:",
+        "Assign an issue_category in English to every risk item.",
+        "",
+        "DOCUMENT TEXT:",
         analysis_text
-    ])
+    ]))
 
     messages = [{"role": "user", "content": user_content}]
 
     # 7. Call LLM
-    print(f"[CONTRACT] Calling LLM: provider={settings.LLM_PROVIDER} "
-          f"model={settings.OLLAMA_LLM_MODEL if settings.LLM_PROVIDER == 'ollama' else settings.GEMINI_LLM_MODEL}")
+    llm_model = (
+        settings.GEMINI_LLM_MODEL
+        if settings.LLM_PROVIDER == "gemini"
+        else settings.OLLAMA_LLM_MODEL
+    )
+    print(
+        f"[CONTRACT] Calling LLM: "
+        f"provider={settings.LLM_PROVIDER} | model={llm_model}"
+    )
 
     try:
         result = await chat_json(
@@ -263,19 +265,24 @@ async def analyze_contract(
             system_prompt=system_prompt,
             temperature=0.1
         )
-        print(f"[CONTRACT] LLM response OK — keys: {list(result.keys())}")
+        print(f"[CONTRACT] LLM OK — keys: {list(result.keys())}")
     except ValueError as e:
         print(f"[CONTRACT] LLM JSON error: {e}")
-        raise ValueError(f"The AI model failed to return a structured analysis. "
-                         f"Try a smaller document or switch LLM provider. Error: {str(e)}")
+        raise ValueError(
+            "The AI model failed to return a structured analysis. "
+            f"Error: {str(e)}"
+        )
     except Exception as e:
-        print(f"[CONTRACT] LLM call error: {type(e).__name__}: {e}")
+        print(f"[CONTRACT] LLM error: {type(e).__name__}: {e}")
         raise ValueError(f"LLM call failed: {type(e).__name__}: {str(e)}")
 
     # 8. Parse all fields safely
-    risks        = _parse_risks(_safe_list(result.get("risks", [])))
-    consequences = _parse_consequences(_safe_list(result.get("consequences", [])))
-    parties      = _parse_parties(_safe_list(result.get("parties", [])))
+    risks            = _parse_risks(_safe_list(result.get("risks", [])))
+    consequences     = _parse_consequences(
+        _safe_list(result.get("consequences", []))
+    )
+    parties          = _parse_parties(_safe_list(result.get("parties", [])))
+    issue_categories = _build_issue_summary(risks)
 
     high   = sum(1 for r in risks if r.risk_level == "HIGH")
     medium = sum(1 for r in risks if r.risk_level == "MEDIUM")
@@ -296,9 +303,15 @@ async def analyze_contract(
         "Consult a qualified attorney for your specific situation."
     )
 
-    print(f"[CONTRACT] Analysis complete — "
-          f"{len(risks)} risks (H:{high} M:{medium} L:{low}) | "
-          f"Overall: {overall}")
+    print(
+        f"[CONTRACT] ── Analysis complete ──\n"
+        f"  Risks      : {len(risks)} total "
+        f"(H:{high} M:{medium} L:{low})\n"
+        f"  Overall    : {overall}\n"
+        f"  OCR used   : {ocr_used}\n"
+        f"  Categories : "
+        f"{[f'{c.category}({c.count})' for c in issue_categories]}"
+    )
 
     return ContractAnalysisResponse(
         contract_type=_safe_str(
@@ -318,6 +331,7 @@ async def analyze_contract(
         ),
         missing_clauses=_safe_list(result.get("missing_clauses", [])),
         risks=risks,
+        issue_categories=issue_categories,
         high_count=high,
         medium_count=medium,
         low_count=low,
