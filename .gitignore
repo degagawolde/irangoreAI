@@ -17,3 +17,8 @@ _filesapp/
 citizen-reg-assistant/chroma_db/
 *.pdf
 .DS_Store
+# macOS
+.DS_Store
+
+# PDFs
+*.pdf

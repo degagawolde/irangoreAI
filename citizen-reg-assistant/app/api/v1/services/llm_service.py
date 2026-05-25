@@ -1,5 +1,6 @@
 import json
 import re
+import time
 import httpx
 from google import genai
 from google.genai import types
@@ -15,12 +16,11 @@ def _get_gemini_client():
     return _gemini_client
 
 
-# ── Gemini ────────────────────────────────────────────────────────────────────
-
 async def _chat_gemini(
     messages: list[dict],
     system_prompt: str = None,
     temperature: float = 0.1,
+    retries: int = 3,
 ) -> str:
     client = _get_gemini_client()
 
@@ -36,22 +36,37 @@ async def _chat_gemini(
 
     config = types.GenerateContentConfig(
         temperature=temperature,
-        max_output_tokens=8192,
+        max_output_tokens=65536,    # ← increased from 8192
         system_instruction=system_prompt or ""
     )
 
-    response = client.models.generate_content(
-        model=settings.GEMINI_LLM_MODEL,
-        contents=gemini_messages,
-        config=config
-    )
-    return response.text
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=settings.GEMINI_LLM_MODEL,
+                contents=gemini_messages,
+                config=config
+            )
+            return response.text
+        except Exception as e:
+            last_error = e
+            err_str    = str(e)
+            if "503" in err_str or "UNAVAILABLE" in err_str:
+                wait = attempt * 5   # 5s, 10s, 15s
+                print(f"[LLM-GEMINI] 503 on attempt {attempt} — retrying in {wait}s...")
+                time.sleep(wait)
+                continue
+            raise e
+
+    raise last_error
 
 
 async def _chat_json_gemini(
     messages: list[dict],
     system_prompt: str = None,
     temperature: float = 0.1,
+    retries: int = 3,
 ) -> dict:
     client = _get_gemini_client()
 
@@ -67,37 +82,69 @@ async def _chat_json_gemini(
 
     config = types.GenerateContentConfig(
         temperature=temperature,
-        max_output_tokens=8192,
+        max_output_tokens=65536,    # ← increased from 8192
         system_instruction=system_prompt or "",
         response_mime_type="application/json",
     )
 
-    response = client.models.generate_content(
-        model=settings.GEMINI_LLM_MODEL,
-        contents=gemini_messages,
-        config=config
-    )
-
-    print(f"[LLM-GEMINI] Response: {len(response.text):,} chars")
-
-    try:
-        return json.loads(response.text)
-    except json.JSONDecodeError as e:
-        print(f"[LLM-GEMINI] JSON parse failed: {e}")
-        print(f"[LLM-GEMINI] Raw (first 500): {response.text[:500]}")
-        clean = re.sub(r"```json|```", "", response.text).strip()
+    last_error = None
+    for attempt in range(1, retries + 1):
         try:
-            return json.loads(clean)
-        except json.JSONDecodeError:
-            match = re.search(r'\{.*\}', clean, re.DOTALL)
-            if match:
-                return json.loads(match.group())
-            raise ValueError(
-                f"Gemini did not return valid JSON: {response.text[:300]}"
+            response = client.models.generate_content(
+                model=settings.GEMINI_LLM_MODEL,
+                contents=gemini_messages,
+                config=config
             )
 
+            print(f"[LLM-GEMINI] Response: {len(response.text):,} chars "
+                  f"(attempt {attempt})")
 
-# ── Ollama ────────────────────────────────────────────────────────────────────
+            try:
+                return json.loads(response.text)
+            except json.JSONDecodeError as e:
+                print(f"[LLM-GEMINI] JSON parse failed: {e}")
+                print(f"[LLM-GEMINI] Raw (first 500): {response.text[:500]}")
+
+                # Try cleaning markdown fences
+                clean = re.sub(r"```json|```", "", response.text).strip()
+                try:
+                    return json.loads(clean)
+                except json.JSONDecodeError:
+                    # Try extracting JSON block
+                    match = re.search(r'\{.*\}', clean, re.DOTALL)
+                    if match:
+                        try:
+                            return json.loads(match.group())
+                        except json.JSONDecodeError:
+                            pass
+
+                    # If still failing — likely truncated, retry
+                    if attempt < retries:
+                        print(f"[LLM-GEMINI] JSON truncated — retrying "
+                              f"with shorter prompt (attempt {attempt + 1})")
+                        last_error = ValueError(
+                            f"JSON truncated at {len(response.text)} chars"
+                        )
+                        continue
+
+                    raise ValueError(
+                        f"Gemini returned invalid JSON after {retries} attempts. "
+                        f"Response: {response.text[:300]}"
+                    )
+
+        except Exception as e:
+            last_error = e
+            err_str    = str(e)
+            if "503" in err_str or "UNAVAILABLE" in err_str:
+                wait = attempt * 5
+                print(f"[LLM-GEMINI] 503 on attempt {attempt} — retrying in {wait}s...")
+                time.sleep(wait)
+                continue
+            if "JSON" not in err_str:
+                raise e
+
+    raise last_error
+
 
 async def _chat_ollama(
     messages: list[dict],
@@ -176,7 +223,7 @@ async def _chat_json_ollama(
             return json.loads(clean)
         except json.JSONDecodeError:
             raise ValueError(
-                f"Ollama did not return valid JSON.\n"
+                f"Ollama returned invalid JSON.\n"
                 f"Response: {content[:500]}"
             )
 
@@ -188,7 +235,6 @@ async def chat(
     system_prompt: str = None,
     temperature: float = 0.1,
 ) -> str:
-    """Send a chat request to the active LLM provider."""
     if settings.LLM_PROVIDER == "gemini":
         return await _chat_gemini(messages, system_prompt, temperature)
     return await _chat_ollama(messages, system_prompt, temperature)
@@ -199,17 +245,13 @@ async def chat_json(
     system_prompt: str = None,
     temperature: float = 0.1,
 ) -> dict:
-    """Send a chat request and return parsed JSON."""
     if settings.LLM_PROVIDER == "gemini":
         return await _chat_json_gemini(messages, system_prompt, temperature)
     return await _chat_json_ollama(messages, system_prompt, temperature)
 
 
 async def detect_language(text: str) -> str:
-    """
-    Detect the language of a text.
-    Returns: 'English', 'Amharic', 'Oromiffa', 'Tigrinya', etc.
-    """
+    """Detect language with retry on 503."""
     messages = [
         {
             "role": "user",

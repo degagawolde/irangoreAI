@@ -1,3 +1,5 @@
+# app/core/prompts.py
+
 REGULATION_SYSTEM_PROMPT = """
 You are a legal information assistant specializing in Ethiopian law and regulations.
 
@@ -55,9 +57,10 @@ def get_contract_analysis_prompt(
         - Who bears transfer tax, stamp duty, and registration fees
         - Construction violations or unauthorized developments
         - Government expropriation risk in the area
-        - Seller's warranties about the property condition
+        - Seller warranties about the property condition
         - Compliance with Proclamation No. 721/2011
         """,
+
         "car sale": """
         Focus on:
         - Vehicle identification (VIN/chassis) and registration match
@@ -70,6 +73,7 @@ def get_contract_analysis_prompt(
         - Payment terms and ownership transfer trigger
         - Road transport authority re-registration requirements
         """,
+
         "lease agreement": """
         Focus on:
         - Monthly/annual rent amount and payment due date
@@ -84,6 +88,7 @@ def get_contract_analysis_prompt(
         - Permitted use of the property
         - Compliance with Addis Ababa House Rent Regulation
         """,
+
         "rental handbook": """
         Focus on:
         - Tenant rights and landlord obligations
@@ -96,6 +101,7 @@ def get_contract_analysis_prompt(
         - Dispute resolution mechanisms
         - Legal protections for tenants under Ethiopian law
         """,
+
         "employment": """
         Focus on:
         - Job title, duties, and work location
@@ -110,6 +116,7 @@ def get_contract_analysis_prompt(
         - Pension and social security contributions
         - Grievance and dispute resolution process
         """,
+
         "loan agreement": """
         Focus on:
         - Principal amount, interest rate (fixed or variable)
@@ -123,13 +130,14 @@ def get_contract_analysis_prompt(
         - Guarantor obligations and liability
         - National Bank of Ethiopia lending rate compliance
         """,
+
         "business partnership": """
         Focus on:
-        - Each partner's capital contribution and percentage
+        - Each partner capital contribution and percentage
         - Profit and loss sharing ratio
         - Decision-making authority and voting thresholds
         - Partner roles, duties, and time commitment
-        - Restrictions on partners' outside activities
+        - Restrictions on partners outside activities
         - Admission of new partners process
         - Exit rights, buyout valuation method, and timeline
         - Non-compete period after exit
@@ -137,9 +145,10 @@ def get_contract_analysis_prompt(
         - Dissolution triggers and asset distribution
         - Ethiopian Commercial Code compliance
         """,
+
         "service agreement": """
         Focus on:
-        - Exact scope of services — what is and isn't included
+        - Exact scope of services — what is and is not included
         - Deliverables, milestones, and deadlines
         - Payment terms, invoicing process, and late fees
         - Intellectual property ownership of work product
@@ -150,6 +159,7 @@ def get_contract_analysis_prompt(
         - Termination for convenience terms
         - Dispute resolution and governing law
         """,
+
         "supply agreement": """
         Focus on:
         - Product specifications and quality standards
@@ -161,6 +171,20 @@ def get_contract_analysis_prompt(
         - Force majeure events and consequences
         - Exclusivity obligations
         - Termination triggers and inventory handling
+        """,
+
+        "tenancy agreement": """
+        Focus on:
+        - Rent amount, due date, and accepted payment methods
+        - Tenancy duration and renewal process
+        - Security deposit amount and return conditions
+        - Eviction notice requirements per Ethiopian law
+        - Maintenance and repair split between parties
+        - Permitted and prohibited uses of property
+        - Subletting restrictions
+        - Utilities and services responsibilities
+        - Early termination penalties
+        - Dispute resolution mechanism
         """,
     }
 
@@ -194,12 +218,12 @@ YOUR ANALYSIS MUST COVER ALL OF THE FOLLOWING:
 
 {guidance}
 
-ISSUE CATEGORIES — assign exactly one to each risk:
+ISSUE CATEGORIES — assign exactly one to each risk (keep category in English):
 - "Timeline Violation"      → missed deadlines, late delivery, expired terms
-- "Transfer Restriction"    → limits on transferring rights, property, or obligations
+- "Transfer Restriction"    → limits on transferring rights, property, obligations
 - "Financial Penalty"       → fines, interest, fees, forfeitures for non-compliance
-- "Termination Liability"   → consequences of ending the contract early or wrongfully
-- "Ambiguous Language"      → vague, unclear, or undefined terms that create uncertainty
+- "Termination Liability"   → consequences of ending contract early or wrongfully
+- "Ambiguous Language"      → vague, unclear, or undefined terms
 - "Missing Clause"          → important protection that is completely absent
 - "Unfair Terms"            → one-sided clauses that heavily favor one party
 - "Legal Non-Compliance"    → violates Ethiopian law or regulation
@@ -211,14 +235,20 @@ ISSUE CATEGORIES — assign exactly one to each risk:
 - "Other"                   → does not fit above categories
 
 STRICT RULES:
-- Read carefully — extract exact numbers, amounts, dates
-- Flag MISSING clauses as HIGH risk
+- Read carefully — extract exact numbers, amounts, dates from the document
+- Flag MISSING clauses as HIGH risk — absence of protection is a risk
 - Never tell user to sign or not sign
 - This is legal information only, never legal advice
 - Return ONLY valid JSON — no markdown, no text outside JSON
 - Every field value must be in {language}
+- Keep each explanation under 100 words
+- Keep each recommendation under 80 words
+- Maximum 10 risks — focus on the most critical ones
+- Maximum 8 missing clauses — focus on the most important ones
+- Maximum 5 obligations per party
+- issue_category must always be in English exactly as listed above
 
-Return ONLY this exact JSON:
+Return ONLY this exact JSON — no text before or after:
 {{
   "contract_type": "document type in {language}",
   "summary": "3-4 sentence overview in {language}",
@@ -226,12 +256,24 @@ Return ONLY this exact JSON:
     {{
       "name": "party name",
       "role": "role in {language}",
-      "obligations": ["obligation in {language}"]
+      "obligations": [
+        "obligation 1 in {language}",
+        "obligation 2 in {language}"
+      ]
     }}
   ],
-  "obligations": ["obligation in {language}"],
-  "limitations_and_restrictions": ["restriction in {language}"],
-  "requirements": ["requirement in {language}"],
+  "obligations": [
+    "clear obligation in {language}",
+    "..."
+  ],
+  "limitations_and_restrictions": [
+    "what is prohibited or restricted in {language}",
+    "..."
+  ],
+  "requirements": [
+    "condition that must be met in {language}",
+    "..."
+  ],
   "consequences": [
     {{
       "trigger": "what causes this in {language}",
@@ -239,18 +281,24 @@ Return ONLY this exact JSON:
       "severity": "HIGH|MEDIUM|LOW"
     }}
   ],
-  "important_conditions": ["condition in {language}"],
-  "missing_clauses": ["missing protection in {language}"],
+  "important_conditions": [
+    "key date, amount, deadline in {language}",
+    "..."
+  ],
+  "missing_clauses": [
+    "important protection that is absent in {language}",
+    "..."
+  ],
   "risks": [
     {{
       "clause": "exact clause text or MISSING",
       "risk_level": "HIGH|MEDIUM|LOW",
       "issue_category": "one category from the list above in English",
-      "explanation": "why this is risky in {language}",
-      "recommendation": "what to do in {language}"
+      "explanation": "why this is risky in {language} — max 100 words",
+      "recommendation": "what to do in {language} — max 80 words"
     }}
   ],
   "overall_risk_level": "HIGH|MEDIUM|LOW",
-  "disclaimer": "disclaimer in {language}"
+  "disclaimer": "legal information disclaimer in {language}"
 }}
 """
